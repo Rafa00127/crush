@@ -172,6 +172,7 @@ type sessionAgent struct {
 	systemPromptPrefix *csync.Value[string]
 	systemPrompt       *csync.Value[string]
 	tools              *csync.Slice[fantasy.AgentTool]
+	providerTools      *csync.Slice[fantasy.ProviderTool]
 
 	isSubAgent           bool
 	sessions             session.Service
@@ -233,8 +234,12 @@ type SessionAgentOptions struct {
 	Sessions             session.Service
 	Messages             message.Service
 	Tools                []fantasy.AgentTool
-	Notify               pubsub.Publisher[notify.Notification]
-	RunComplete          pubsub.Publisher[notify.RunComplete]
+	// ProviderTools are provider-defined tools (e.g. Anthropic's
+	// server-executed web search). They are sent to the model API for the
+	// provider to run instead of being executed locally.
+	ProviderTools []fantasy.ProviderTool
+	Notify        pubsub.Publisher[notify.Notification]
+	RunComplete   pubsub.Publisher[notify.RunComplete]
 }
 
 func NewSessionAgent(
@@ -250,6 +255,7 @@ func NewSessionAgent(
 		messages:             opts.Messages,
 		disableAutoSummarize: opts.DisableAutoSummarize,
 		tools:                csync.NewSliceFrom(opts.Tools),
+		providerTools:        csync.NewSliceFrom(opts.ProviderTools),
 		isYolo:               opts.IsYolo,
 		notify:               opts.Notify,
 		runComplete:          opts.RunComplete,
@@ -682,12 +688,19 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		agentTools[len(agentTools)-1].SetProviderOptions(a.getCacheControlOptions())
 	}
 
-	agent := fantasy.NewAgent(
-		largeModel.Model,
+	// Provider-defined tools (e.g. Anthropic's server-executed web search)
+	// are passed to the model API for the provider to run, so they carry no
+	// local execution.
+	agentOptions := []fantasy.AgentOption{
 		fantasy.WithSystemPrompt(systemPrompt),
 		fantasy.WithTools(agentTools...),
 		fantasy.WithUserAgent(userAgent),
-	)
+	}
+	if providerTools := a.providerTools.Copy(); len(providerTools) > 0 {
+		agentOptions = append(agentOptions, fantasy.WithProviderDefinedTools(providerTools...))
+	}
+
+	agent := fantasy.NewAgent(largeModel.Model, agentOptions...)
 
 	sessionLock := sync.Mutex{}
 	currentSession, err := a.sessions.Get(ctx, call.SessionID)
@@ -788,6 +801,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	var stepMessages []fantasy.Message
 	var shouldSummarize bool
 	sanitizedToolCalls := make(map[string]bool)
+	// searchSources buffers URLs found by a provider-executed web search.
+	// The provider streams them just before the search's tool result (see
+	// the Anthropic provider), and they are attached to that result below
+	// so it is not left empty.
+	var searchSources []fantasy.SourceContent
 	// Don't send MaxOutputTokens if 0 — some providers (e.g. LM Studio) reject it
 	var maxOutputTokens *int64
 	if call.MaxOutputTokens > 0 {
@@ -956,7 +974,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				ID:               tc.ToolCallID,
 				Name:             tc.ToolName,
 				Input:            input,
-				ProviderExecuted: false,
+				ProviderExecuted: tc.ProviderExecuted,
 				Finished:         true,
 			}
 			currentAssistant.AddToolCall(toolCall)
@@ -964,8 +982,29 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			// even if the request is canceled mid-stream
 			return a.messages.Update(ctx, *currentAssistant)
 		},
+		OnSource: func(source fantasy.SourceContent) error {
+			if source.SourceType != fantasy.SourceTypeURL || source.URL == "" {
+				return nil
+			}
+			// One search turn can surface the same page twice.
+			for _, seen := range searchSources {
+				if seen.URL == source.URL {
+					return nil
+				}
+			}
+			searchSources = append(searchSources, source)
+			return nil
+		},
 		OnToolResult: func(result fantasy.ToolResultContent) error {
 			toolResult := a.convertToToolResult(result)
+			if result.ProviderExecuted && len(searchSources) > 0 {
+				// A provider-executed search reports its findings as
+				// sources and leaves the tool result itself empty, so
+				// render them as the result body. That keeps the stored
+				// transcript and the UI from showing a bare search call.
+				toolResult.Content = formatSearchSources(searchSources)
+				searchSources = nil
+			}
 			if sanitizedToolCalls[result.ToolCallID] {
 				toolResult.Content = "Tool call failed: arguments were not valid JSON. Please check your tool call format and try again."
 				toolResult.IsError = true
@@ -981,6 +1020,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			return createMsgErr
 		},
 		OnStepFinish: func(stepResult fantasy.StepResult) error {
+			// Sources that never reached a tool result (e.g. a cancelled
+			// stream) must not attach to a later search.
+			searchSources = nil
 			for _, w := range stepResult.Warnings {
 				slog.Warn("Provider warning", "type", w.Type, "message", w.Message)
 			}
@@ -2111,12 +2153,37 @@ func (a *sessionAgent) Model() Model {
 	return a.largeModel.Get()
 }
 
+// formatSearchSources renders the pages a provider-executed web search
+// surfaced as a markdown list. The title falls back to the URL when the
+// provider omits one, since the source list is the only record of what the
+// search actually returned.
+func formatSearchSources(sources []fantasy.SourceContent) string {
+	var sb strings.Builder
+	sb.WriteString("Sources:\n")
+	for _, source := range sources {
+		label := source.Title
+		if label == "" {
+			label = source.URL
+		}
+		fmt.Fprintf(&sb, "- [%s](%s)\n", label, source.URL)
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
 // convertToToolResult converts a fantasy tool result to a message tool result.
 func (a *sessionAgent) convertToToolResult(result fantasy.ToolResultContent) message.ToolResult {
 	baseResult := message.ToolResult{
 		ToolCallID: result.ToolCallID,
 		Name:       result.ToolName,
 		Metadata:   result.ClientMetadata,
+	}
+
+	// Provider-executed tools (e.g. Anthropic's server-side web search)
+	// produce no local output: the provider returns the data as sources
+	// and provider metadata, leaving Result nil. There is nothing to
+	// convert here, and dereferencing that nil would panic.
+	if result.ProviderExecuted || result.Result == nil {
+		return baseResult
 	}
 
 	switch result.Result.GetType() {

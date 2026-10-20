@@ -55,8 +55,15 @@ Today's date: {{.Date}}
 
 <web_search_tool>
 You have access to a web_search tool that allows you to search the web:
+{{- if .ServerSideSearch }}
+- The search runs server-side; the provider performs it and returns the results as sources
+- Provide only a search query (no other parameters)
+- Results carry titles and URLs, and may or may not include a snippet
+- When a snippet is missing, use web_fetch to read the page and extract the details yourself
+{{- else }}
 - Provide a search query and optionally max_results (default: 10)
 - The tool returns search results with titles, URLs, and snippets
+{{- end }}
 - After getting search results, use web_fetch to get full content from relevant URLs
 - **Prefer multiple focused searches over single broad searches**
 - Keep queries short and specific (3-6 words is often ideal)

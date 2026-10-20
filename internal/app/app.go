@@ -876,6 +876,12 @@ func (app *App) Shutdown() {
 
 // checkForUpdates checks for available updates.
 func (app *App) checkForUpdates(ctx context.Context) {
+	// A development build has no released version to be measured against:
+	// there is nothing to offer and no reason to call the network for it.
+	if (update.Info{Current: version.Version}).IsDevelopment() {
+		return
+	}
+
 	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 

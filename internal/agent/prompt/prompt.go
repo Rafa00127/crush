@@ -26,6 +26,10 @@ type Prompt struct {
 	now        func() time.Time
 	platform   string
 	workingDir string
+	// serverSideSearch reports that web search is executed by the
+	// provider rather than by a local tool, so templates describe it
+	// accordingly.
+	serverSideSearch bool
 }
 
 type PromptDat struct {
@@ -40,6 +44,9 @@ type PromptDat struct {
 	ContextFiles       []ContextFile
 	GlobalContextFiles []ContextFile
 	AvailSkillXML      string
+	// ServerSideSearch is true when the provider runs web search
+	// itself, so the sub-agent prompt describes that tool shape.
+	ServerSideSearch bool
 }
 
 type ContextFile struct {
@@ -64,6 +71,14 @@ func WithPlatform(platform string) Option {
 func WithWorkingDir(workingDir string) Option {
 	return func(p *Prompt) {
 		p.workingDir = workingDir
+	}
+}
+
+// WithServerSideSearch marks the prompt as backed by provider-executed web
+// search, so templates can describe the right tool shape.
+func WithServerSideSearch(enabled bool) Option {
+	return func(p *Prompt) {
+		p.serverSideSearch = enabled
 	}
 }
 
@@ -206,14 +221,15 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 
 	isGit := isGitRepo(store.WorkingDir())
 	data := PromptDat{
-		Provider:      provider,
-		Model:         model,
-		Config:        *cfg,
-		WorkingDir:    filepath.ToSlash(workingDir),
-		IsGitRepo:     isGit,
-		Platform:      platform,
-		Date:          p.now().Format("1/2/2006"),
-		AvailSkillXML: availSkillXML,
+		Provider:         provider,
+		Model:            model,
+		Config:           *cfg,
+		WorkingDir:       filepath.ToSlash(workingDir),
+		IsGitRepo:        isGit,
+		Platform:         platform,
+		Date:             p.now().Format("1/2/2006"),
+		AvailSkillXML:    availSkillXML,
+		ServerSideSearch: p.serverSideSearch,
 	}
 	if isGit {
 		var err error
