@@ -171,6 +171,7 @@ type SessionAgent interface {
 	SetModels(large Model, small Model)
 	SetTools(tools []fantasy.AgentTool)
 	SetSystemPrompt(systemPrompt string)
+	SetContextReminder(reminder string)
 	Cancel(sessionID string)
 	CancelAll()
 	IsSessionBusy(sessionID string) bool
@@ -205,6 +206,7 @@ type sessionAgent struct {
 	smallModel         *csync.Value[Model]
 	systemPromptPrefix *csync.Value[string]
 	systemPrompt       *csync.Value[string]
+	contextReminder    *csync.Value[string]
 	tools              *csync.Slice[fantasy.AgentTool]
 	providerTools      *csync.Slice[fantasy.ProviderTool]
 
@@ -266,6 +268,7 @@ type SessionAgentOptions struct {
 	SmallModel           Model
 	SystemPromptPrefix   string
 	SystemPrompt         string
+	ContextReminder      string
 	IsSubAgent           bool
 	DisableAutoSummarize bool
 	IsYolo               bool
@@ -289,6 +292,7 @@ func NewSessionAgent(
 		smallModel:           csync.NewValue(opts.SmallModel),
 		systemPromptPrefix:   csync.NewValue(opts.SystemPromptPrefix),
 		systemPrompt:         csync.NewValue(opts.SystemPrompt),
+		contextReminder:      csync.NewValue(opts.ContextReminder),
 		isSubAgent:           opts.IsSubAgent,
 		sessions:             opts.Sessions,
 		messages:             opts.Messages,
@@ -1431,7 +1435,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 		return nil
 	}
 
-	aiMsgs, _ := a.preparePrompt(msgs, largeModel.CatwalkCfg.SupportsImages)
+	aiMsgs, _ := a.preparePromptForSummary(msgs, largeModel.CatwalkCfg.SupportsImages)
 
 	genCtx, cancel := context.WithCancel(ctx)
 	ac := &activeCancel{cancel: cancel}
@@ -1607,7 +1611,20 @@ func (a *sessionAgent) createUserMessage(ctx context.Context, call SessionAgentC
 }
 
 func (a *sessionAgent) preparePrompt(msgs []message.Message, supportsImages bool, attachments ...message.Attachment) ([]fantasy.Message, []fantasy.FilePart) {
+	return a.preparePromptInternal(true, msgs, supportsImages, attachments...)
+}
+
+func (a *sessionAgent) preparePromptForSummary(msgs []message.Message, supportsImages bool) ([]fantasy.Message, []fantasy.FilePart) {
+	return a.preparePromptInternal(false, msgs, supportsImages)
+}
+
+func (a *sessionAgent) preparePromptInternal(includeReminder bool, msgs []message.Message, supportsImages bool, attachments ...message.Attachment) ([]fantasy.Message, []fantasy.FilePart) {
 	var history []fantasy.Message
+	if includeReminder {
+		if reminder := a.contextReminder.Get(); reminder != "" {
+			history = append(history, fantasy.NewUserMessage(reminder))
+		}
+	}
 	if !a.isSubAgent {
 		history = append(history, fantasy.NewUserMessage(
 			fmt.Sprintf(
@@ -2187,6 +2204,10 @@ func (a *sessionAgent) SetTools(tools []fantasy.AgentTool) {
 
 func (a *sessionAgent) SetSystemPrompt(systemPrompt string) {
 	a.systemPrompt.Set(systemPrompt)
+}
+
+func (a *sessionAgent) SetContextReminder(reminder string) {
+	a.contextReminder.Set(reminder)
 }
 
 func (a *sessionAgent) Model() Model {

@@ -46,8 +46,8 @@ func viewDescription() string {
 
 type ViewParams struct {
 	FilePath string `json:"file_path" description:"The path to the file to read"`
-	Offset   int    `json:"offset,omitempty" description:"The line number to start reading from (0-based)"`
-	Limit    int    `json:"limit,omitempty" description:"The number of lines to read (defaults to 200)"`
+	Offset   int    `json:"offset,omitempty" description:"1-based line number to start reading from"`
+	Limit    int    `json:"limit,omitempty" description:"The number of lines to read (defaults to 2000)"`
 }
 
 type ViewPermissionsParams struct {
@@ -72,9 +72,9 @@ type ViewResponseMetadata struct {
 }
 
 const (
-	ViewToolName     = "view"
+	ViewToolName     = "read"
 	MaxViewSize      = 200 * 1024 // 200KB
-	DefaultReadLimit = 200
+	DefaultReadLimit = 2000
 	MaxLineLength    = 2000
 )
 
@@ -101,6 +101,9 @@ func NewViewTool(
 		func(ctx context.Context, params ViewParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.FilePath == "" {
 				return fantasy.NewTextErrorResponse("file_path is required"), nil
+			}
+			if params.Offset <= 0 {
+				params.Offset = 1
 			}
 
 			// Handle builtin skill files (crush: prefix).
@@ -231,7 +234,7 @@ func NewViewTool(
 			if isSkillFile {
 				maxContentSize = 0
 			}
-			content, hasMore, err := readTextFile(filePath, params.Offset, params.Limit, maxContentSize)
+			content, hasMore, err := readTextFile(filePath, params.Offset-1, params.Limit, maxContentSize)
 			if err != nil {
 				var tooLarge contentTooLargeError
 				if errors.As(err, &tooLarge) {
@@ -247,11 +250,11 @@ func NewViewTool(
 			openInLSPs(ctx, lspManager, filePath)
 			waitForLSPDiagnostics(ctx, lspManager, filePath, 300*time.Millisecond)
 			output := "<file>\n"
-			output += addLineNumbers(content, params.Offset+1)
+			output += addLineNumbers(content, params.Offset)
 
 			if hasMore {
 				output += fmt.Sprintf("\n\n(File has more lines. Use 'offset' parameter to read beyond line %d)",
-					params.Offset+len(strings.Split(content, "\n")))
+					params.Offset+len(strings.Split(content, "\n"))-1)
 			}
 			output += "\n</file>\n"
 			output += getDiagnostics(filePath, lspManager)
@@ -460,8 +463,12 @@ func readBuiltinFile(params ViewParams, skillTracker *skills.Tracker) (fantasy.T
 	}
 
 	lines := strings.Split(content, "\n")
-	offset := min(params.Offset, len(lines))
-	lines = lines[offset:]
+	offset := params.Offset
+	if offset <= 0 {
+		offset = 1
+	}
+	start := min(offset-1, len(lines))
+	lines = lines[start:]
 
 	hasMore := len(lines) > limit
 	if hasMore {
@@ -469,10 +476,10 @@ func readBuiltinFile(params ViewParams, skillTracker *skills.Tracker) (fantasy.T
 	}
 
 	output := "<file>\n"
-	output += addLineNumbers(strings.Join(lines, "\n"), offset+1)
+	output += addLineNumbers(strings.Join(lines, "\n"), offset)
 	if hasMore {
 		output += fmt.Sprintf("\n\n(File has more lines. Use 'offset' parameter to read beyond line %d)",
-			offset+len(lines))
+			offset+len(lines)-1)
 	}
 	output += "\n</file>\n"
 

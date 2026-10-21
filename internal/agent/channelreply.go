@@ -110,7 +110,7 @@ func channelReplyDelivered(reply *config.MCPChannelReply, channel string, comple
 		if name == "" {
 			continue
 		}
-		if _, ok := completedTools[fmt.Sprintf("mcp_%s_%s", channel, name)]; ok {
+		if _, ok := completedTools[fmt.Sprintf("mcp__%s__%s", channel, name)]; ok {
 			return true
 		}
 	}

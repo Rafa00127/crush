@@ -1,1 +1,1 @@
-Manage a structured task list for multi-step work; each task has pending/in_progress/completed state. Keep exactly one task in_progress at a time. Skip for simple or single-step tasks.
+Manage a structured task list for multi-step work. Send the complete list on every call; each item is pending, in_progress, or completed. Keep exactly one item in_progress. Skip it for simple or single-step tasks.

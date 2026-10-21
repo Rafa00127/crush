@@ -120,7 +120,7 @@ func TestViewToolAllowsSmallSectionsOfLargeFiles(t *testing.T) {
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 	resp := runViewTool(t, tool, ctx, ViewParams{
 		FilePath: filePath,
-		Offset:   1,
+		Offset:   2,
 		Limit:    1,
 	})
 

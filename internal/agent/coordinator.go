@@ -825,11 +825,12 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 	initCtx := context.WithoutCancel(ctx)
 
 	c.readyWg.Go(func() error {
-		systemPrompt, err := prompt.Build(initCtx, large.Model.Provider(), large.Model.Model(), c.cfg)
+		systemPrompt, reminder, err := prompt.BuildWithReminder(initCtx, large.Model.Provider(), large.Model.Model(), c.cfg)
 		if err != nil {
 			return err
 		}
 		result.SetSystemPrompt(systemPrompt)
+		result.SetContextReminder(reminder)
 		return nil
 	})
 

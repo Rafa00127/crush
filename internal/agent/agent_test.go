@@ -1351,3 +1351,20 @@ func TestProviderRetryLogFields(t *testing.T) {
 		}, fields)
 	})
 }
+
+func TestPreparePromptIncludesContextReminder(t *testing.T) {
+	t.Parallel()
+
+	agent := NewSessionAgent(SessionAgentOptions{
+		ContextReminder: "<system_reminder>project context</system_reminder>",
+		IsSubAgent:      true,
+	})
+
+	history, _ := agent.(*sessionAgent).preparePrompt(nil, false)
+	require.Len(t, history, 1)
+	require.Equal(t, fantasy.MessageRoleUser, history[0].Role)
+
+	text, ok := fantasy.AsMessagePart[fantasy.TextPart](history[0].Content[0])
+	require.True(t, ok)
+	require.Contains(t, text.Text, "project context")
+}

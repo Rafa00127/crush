@@ -1,1 +1,1 @@
-Search file contents by regex or literal text; returns matching file paths sorted by modification time (max {{ .MaxResults }}); respects .gitignore. Use glob to filter by filename, not contents.
+Search file contents by regex or literal text; returns matching lines as `path:line:text`, up to {{ .MaxResults }} matches, sorted by modification time; respects .gitignore. Use glob to filter by filename, not contents. Use read on a matched file when you need surrounding context.

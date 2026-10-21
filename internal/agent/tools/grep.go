@@ -88,6 +88,7 @@ type GrepResponseMetadata struct {
 
 const (
 	GrepToolName        = "grep"
+	GrepMaxResults      = 250
 	maxGrepContentWidth = 500
 )
 
@@ -105,7 +106,7 @@ type grepDescriptionData struct {
 
 func grepDescription() string {
 	return renderTemplate(grepDescriptionTpl, grepDescriptionData{
-		MaxResults: 100,
+		MaxResults: GrepMaxResults,
 	})
 }
 
@@ -140,7 +141,7 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 			searchCtx, cancel := context.WithTimeout(ctx, config.GetTimeout())
 			defer cancel()
 
-			matches, truncated, err := searchFiles(searchCtx, searchPattern, searchPath, params.Include, 100)
+			matches, truncated, err := searchFiles(searchCtx, searchPattern, searchPath, params.Include, GrepMaxResults)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("error searching files: %v", err)), nil
 			}
@@ -151,28 +152,16 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 			} else {
 				fmt.Fprintf(&output, "Found %d matches\n", len(matches))
 
-				currentFile := ""
 				for _, match := range matches {
-					if currentFile != match.path {
-						if currentFile != "" {
-							output.WriteString("\n")
-						}
-						currentFile = match.path
-						fmt.Fprintf(&output, "%s:\n", filepath.ToSlash(match.path))
+					if match.lineNum <= 0 {
+						fmt.Fprintf(&output, "%s\n", filepath.ToSlash(match.path))
+						continue
 					}
-					if match.lineNum > 0 {
-						lineText := match.lineText
-						if ansi.StringWidth(lineText) > maxGrepContentWidth {
-							lineText = ansi.Truncate(lineText, maxGrepContentWidth, "...")
-						}
-						if match.charNum > 0 {
-							fmt.Fprintf(&output, "  Line %d, Char %d: %s\n", match.lineNum, match.charNum, lineText)
-						} else {
-							fmt.Fprintf(&output, "  Line %d: %s\n", match.lineNum, lineText)
-						}
-					} else {
-						fmt.Fprintf(&output, "  %s\n", match.path)
+					lineText := match.lineText
+					if ansi.StringWidth(lineText) > maxGrepContentWidth {
+						lineText = ansi.Truncate(lineText, maxGrepContentWidth, "...")
 					}
+					fmt.Fprintf(&output, "%s:%d:%s\n", filepath.ToSlash(match.path), match.lineNum, lineText)
 				}
 
 				if truncated {

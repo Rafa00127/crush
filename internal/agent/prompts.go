@@ -11,6 +11,9 @@ import (
 //go:embed templates/coder.md.tpl
 var coderPromptTmpl []byte
 
+//go:embed templates/context.md.tpl
+var contextReminderTmpl []byte
+
 //go:embed templates/task.md.tpl
 var taskPromptTmpl []byte
 
@@ -21,6 +24,7 @@ var planPromptTmpl []byte
 var initializePromptTmpl []byte
 
 func coderPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
+	opts = append(opts, prompt.WithReminderTemplate(string(contextReminderTmpl)))
 	systemPrompt, err := prompt.NewPrompt("coder", string(coderPromptTmpl), opts...)
 	if err != nil {
 		return nil, err

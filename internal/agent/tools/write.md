@@ -1,1 +1,3 @@
-Create or overwrite a file with given content; auto-creates parent dirs. Cannot append. Read the file first to avoid conflicts. For surgical changes use edit or multiedit.
+Create or overwrite a file with the given content. Parent directories are created automatically. This tool cannot append.
+
+Read an existing file before overwriting it: the tool rejects writes to files that were not read in this session, or that changed since the last read. For targeted changes prefer `edit` or `multiedit`; use `write` for new files or full replacements. If the content is already identical, the tool reports that no changes were made.

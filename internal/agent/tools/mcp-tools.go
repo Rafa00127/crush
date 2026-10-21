@@ -13,11 +13,11 @@ import (
 
 // whitelistDockerTools contains Docker MCP tools that don't require permission.
 var whitelistDockerTools = []string{
-	"mcp_docker_mcp-find",
-	"mcp_docker_mcp-add",
-	"mcp_docker_mcp-remove",
-	"mcp_docker_mcp-config-set",
-	"mcp_docker_code-mode",
+	"mcp__docker__mcp-find",
+	"mcp__docker__mcp-add",
+	"mcp__docker__mcp-remove",
+	"mcp__docker__mcp-config-set",
+	"mcp__docker__code-mode",
 }
 
 // GetMCPTools gets all the currently available MCP tools.
@@ -56,7 +56,7 @@ func (m *Tool) ProviderOptions() fantasy.ProviderOptions {
 }
 
 func (m *Tool) Name() string {
-	return fmt.Sprintf("mcp_%s_%s", m.mcpName, m.tool.Name)
+	return fmt.Sprintf("mcp__%s__%s", m.mcpName, m.tool.Name)
 }
 
 func (m *Tool) MCP() string {

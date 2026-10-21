@@ -197,7 +197,7 @@ type SourcegraphResponseMetadata struct {
 	Truncated       bool `json:"truncated"`
 }
 
-const ViewToolName = "view"
+const ViewToolName = "read"
 
 // ViewParams represents the parameters for the view tool.
 type ViewParams struct {

@@ -22,11 +22,12 @@ import (
 
 // Prompt represents a template-based prompt generator.
 type Prompt struct {
-	name       string
-	template   string
-	now        func() time.Time
-	platform   string
-	workingDir string
+	name             string
+	template         string
+	reminderTemplate string
+	now              func() time.Time
+	platform         string
+	workingDir       string
 	// serverSideSearch reports that web search is executed by the
 	// provider rather than by a local tool, so templates describe it
 	// accordingly.
@@ -63,6 +64,14 @@ func WithTimeFunc(fn func() time.Time) Option {
 	}
 }
 
+// WithReminderTemplate sets a second template rendered with the same prompt
+// data and delivered as a hidden user reminder instead of the system prompt.
+func WithReminderTemplate(tmpl string) Option {
+	return func(p *Prompt) {
+		p.reminderTemplate = tmpl
+	}
+}
+
 func WithPlatform(platform string) Option {
 	return func(p *Prompt) {
 		p.platform = platform
@@ -96,19 +105,42 @@ func NewPrompt(name, promptTemplate string, opts ...Option) (*Prompt, error) {
 }
 
 func (p *Prompt) Build(ctx context.Context, provider, model string, store *config.ConfigStore) (string, error) {
-	t, err := template.New(p.name).Parse(p.template)
+	systemPrompt, _, err := p.BuildWithReminder(ctx, provider, model, store)
+	return systemPrompt, err
+}
+
+// BuildWithReminder renders the system prompt and, when configured, the
+// reminder that carries session context as a hidden user message.
+func (p *Prompt) BuildWithReminder(ctx context.Context, provider, model string, store *config.ConfigStore) (string, string, error) {
+	d, err := p.promptData(ctx, provider, model, store)
+	if err != nil {
+		return "", "", err
+	}
+
+	systemPrompt, err := renderTemplate(p.name, p.template, d)
+	if err != nil {
+		return "", "", err
+	}
+
+	var reminder string
+	if p.reminderTemplate != "" {
+		reminder, err = renderTemplate(p.name+"-reminder", p.reminderTemplate, d)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	return systemPrompt, reminder, nil
+}
+
+func renderTemplate(name, tmpl string, data PromptDat) (string, error) {
+	t, err := template.New(name).Parse(tmpl)
 	if err != nil {
 		return "", fmt.Errorf("parsing template: %w", err)
 	}
 	var sb strings.Builder
-	d, err := p.promptData(ctx, provider, model, store)
-	if err != nil {
-		return "", err
-	}
-	if err := t.Execute(&sb, d); err != nil {
+	if err := t.Execute(&sb, data); err != nil {
 		return "", fmt.Errorf("executing template: %w", err)
 	}
-
 	return sb.String(), nil
 }
 

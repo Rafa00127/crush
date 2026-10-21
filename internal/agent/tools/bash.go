@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -17,7 +15,6 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/shell"
 )
@@ -281,9 +278,8 @@ func NewBashTool(permissions permission.Service, workingDir, spillDir string, at
 						WorkingDirectory: bgShell.WorkingDir,
 					}
 					if stdout == "" {
-						return fantasy.WithResponseMetadata(fantasy.NewTextResponse(BashNoOutput), metadata), nil
+						stdout = BashNoOutput
 					}
-					stdout += fmt.Sprintf("\n\n<cwd>%s</cwd>", normalizeWorkingDir(bgShell.WorkingDir))
 					return fantasy.WithResponseMetadata(fantasy.NewTextResponse(stdout), metadata), nil
 				}
 
@@ -364,9 +360,8 @@ func NewBashTool(permissions permission.Service, workingDir, spillDir string, at
 					WorkingDirectory: bgShell.WorkingDir,
 				}
 				if stdout == "" {
-					return fantasy.WithResponseMetadata(fantasy.NewTextResponse(BashNoOutput), metadata), nil
+					stdout = BashNoOutput
 				}
-				stdout += fmt.Sprintf("\n\n<cwd>%s</cwd>", normalizeWorkingDir(bgShell.WorkingDir))
 				return fantasy.WithResponseMetadata(fantasy.NewTextResponse(stdout), metadata), nil
 			}
 
@@ -403,11 +398,6 @@ func formatOutput(stdout, stderr string, execErr error, spillDir string) string 
 			errorMessage += "\n"
 		}
 		errorMessage += "Command was aborted before completion"
-	} else if exitCode != 0 {
-		if errorMessage != "" {
-			errorMessage += "\n"
-		}
-		errorMessage += fmt.Sprintf("Exit code %d", exitCode)
 	}
 
 	hasBothOutputs := stdout != "" && stderr != ""
@@ -420,7 +410,11 @@ func formatOutput(stdout, stderr string, execErr error, spillDir string) string 
 		stdout += "\n" + errorMessage
 	}
 
-	return stdout
+	exitMarker := fmt.Sprintf("[exit code: %d]", exitCode)
+	if stdout == "" {
+		return exitMarker
+	}
+	return stdout + "\n" + exitMarker
 }
 
 // TruncateOutput keeps the head and tail of oversized tool output. The
@@ -447,11 +441,4 @@ func TruncateOutput(content, spillDir string) string {
 
 func truncateOutput(content, spillDir string) string {
 	return TruncateOutput(content, spillDir)
-}
-
-func normalizeWorkingDir(path string) string {
-	if runtime.GOOS == "windows" {
-		path = strings.ReplaceAll(path, fsext.WindowsWorkingDirDrive(), "")
-	}
-	return filepath.ToSlash(path)
 }
