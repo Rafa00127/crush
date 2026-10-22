@@ -1835,7 +1835,7 @@ func prettifyToolName(name string) string {
 	case tools.TodosToolName:
 		return "To-Do"
 	case tools.ViewToolName:
-		return "View"
+		return "Read"
 	case tools.WriteToolName:
 		return "Write"
 	default:

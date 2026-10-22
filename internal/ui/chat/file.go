@@ -39,7 +39,7 @@ type ViewToolRenderContext struct{}
 func (v *ViewToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "View", opts.Anim, opts.Compact)
+		return pendingTool(sty, "Read", opts.Anim, opts.Compact)
 	}
 
 	var params tools.ViewParams
@@ -56,7 +56,7 @@ func (v *ViewToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 		toolParams = append(toolParams, "offset", fmt.Sprintf("%d", params.Offset))
 	}
 
-	header := toolHeader(sty, opts.Status, "View", cappedWidth, opts, toolParams...)
+	header := toolHeader(sty, opts.Status, "Read", cappedWidth, opts, toolParams...)
 	if opts.Compact {
 		return header
 	}
