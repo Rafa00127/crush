@@ -341,7 +341,7 @@ func (t *toolSearchTool) Run(_ context.Context, call fantasy.ToolCall) (fantasy.
 // discriminating signal is almost entirely whether query terms appear in the
 // tool name, and a heuristic keeps this dependency-free and deterministic.
 func (t *toolSearchTool) rank(query string) []fantasy.AgentTool {
-	terms := tokenize(query)
+	terms := expandTerms(tokenize(query))
 	if len(terms) == 0 {
 		return nil
 	}
@@ -358,14 +358,14 @@ func (t *toolSearchTool) rank(query string) []fantasy.AgentTool {
 		if u, ok := d.(interface{ Unwrap() fantasy.AgentTool }); ok {
 			full = u.Unwrap().Info()
 		}
-		name := strings.ToLower(full.Name)
-		desc := strings.ToLower(full.Description)
+		nameTokens := tokenize(full.Name)
+		descTokens := tokenize(full.Description)
 		score := 0
 		for _, term := range terms {
-			if strings.Contains(name, term) {
+			if hasTerm(nameTokens, term) {
 				score += 8
 			}
-			if strings.Contains(desc, term) {
+			if hasTerm(descTokens, term) {
 				score += 2
 			}
 		}
@@ -411,4 +411,135 @@ func tokenize(s string) []string {
 		out = append(out, f)
 	}
 	return out
+}
+
+// queryAliases bridges the vocabulary gap between how people ask and how MCP
+// tools are named. It is deliberately small and static: deterministic ranking
+// matters more than exhaustive coverage, and a model that already knows the
+// exact tool name can pass `names` instead.
+var queryAliases = map[string][]string{
+	"反编译": {"decompile", "decompiler"},
+	"反汇编": {"disassemble", "assembly"},
+	"伪代码": {"pseudocode"},
+	"字符串": {"strings", "string"},
+	"函数":  {"function", "procedure"},
+	"过程":  {"procedure"},
+	"引用":  {"xrefs", "references"},
+	"调用":  {"call", "callers", "callees"},
+	"调用者": {"callers"},
+	"被调用": {"callees"},
+	"固件":  {"firmware"},
+	"安卓":  {"android"},
+	"苹果":  {"apple", "ios"},
+	"浏览器": {"browser"},
+	"进程":  {"process"},
+	"附加":  {"attach"},
+	"注入":  {"inject", "instrument"},
+	"证据":  {"evidence"},
+	"导出":  {"export", "exports"},
+	"导入":  {"import", "imports"},
+	"符号":  {"symbol", "symbols"},
+	"段":   {"section", "segment"},
+	"资源":  {"resource", "resources"},
+	"清单":  {"manifest"},
+	"版本":  {"version"},
+	"编译":  {"compiler", "build"},
+	"模块":  {"module"},
+	"依赖":  {"dependency"},
+	"二进制": {"binary"},
+	"调试":  {"debug"},
+	"断点":  {"breakpoint"},
+	"内存":  {"memory"},
+	"注册表": {"registry"},
+	"驱动":  {"driver"},
+	"内核":  {"kernel"},
+	"证书":  {"certificate"},
+	"签名":  {"signature"},
+	"哈希":  {"hash", "digest"},
+	"文件头": {"header"},
+	"目录":  {"directory"},
+	"路径":  {"path"},
+	"日志":  {"log"},
+	"配置":  {"config"},
+	"网络":  {"network"},
+	"截图":  {"screenshot"},
+	"界面":  {"ui", "interface"},
+	"数据库": {"database", "sqlite"},
+	"壳":   {"packer", "unpack"},
+	"脱壳":  {"unpack"},
+	"漏洞":  {"vulnerability"},
+	"提权":  {"privilege"},
+	"加密":  {"crypto", "encrypt"},
+	"时间":  {"time"},
+
+	"disasm":    {"disassemble", "assembly"},
+	"decomp":    {"decompile", "decompiler"},
+	"pseudo":    {"pseudocode"},
+	"func":      {"function", "procedure"},
+	"xref":      {"xrefs", "references"},
+	"attach":    {"frida", "instrument"},
+	"apk":       {"android"},
+	"exe":       {"pe", "windows", "executable"},
+	"dll":       {"pe", "windows"},
+	"golang":    {"go"},
+	"dotnet":    {"managed", "dotnet"},
+	"js":        {"javascript"},
+	"macho":     {"macho"},
+	"deps":      {"dependency"},
+	"buildinfo": {"build", "version"},
+}
+
+func containsCJK(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// expandTerms adds synonyms and Chinese-to-English mappings for each query
+// token. Chinese phrases are matched by substring because a sentence often
+// arrives as one whitespace-free token.
+func expandTerms(tokens []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(tokens))
+	add := func(term string) {
+		if len(term) < 2 || toolSearchStopWords[term] || seen[term] {
+			return
+		}
+		seen[term] = true
+		out = append(out, term)
+	}
+	for _, token := range tokens {
+		add(token)
+		for _, alias := range queryAliases[token] {
+			add(alias)
+		}
+		if containsCJK(token) {
+			for key, aliases := range queryAliases {
+				if strings.Contains(token, key) {
+					for _, alias := range aliases {
+						add(alias)
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// hasTerm matches a whole token, with a prefix fallback for longer terms so
+// "decompile" still finds "decompiler" while short tokens like "go" do not
+// match "google".
+func hasTerm(tokens []string, term string) bool {
+	for _, token := range tokens {
+		if token == term {
+			return true
+		}
+		if len(term) >= 4 && strings.HasPrefix(token, term) {
+			return true
+		}
+	}
+	return false
 }

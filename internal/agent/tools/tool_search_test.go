@@ -326,3 +326,52 @@ func TestDeferredToolDoesNotSecondGuessTheServer(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, ran, "malformed JSON should reach the server, which owns that error")
 }
+
+func aliasSurface() []fantasy.AgentTool {
+	noParams := map[string]any{"path": map[string]any{"type": "string"}}
+	return []fantasy.AgentTool{
+		NewDeferredTool(mcpFake("mcp__rea__procedure_pseudo_code",
+			"Decompile a procedure and return pseudocode.", noParams)),
+		NewDeferredTool(mcpFake("mcp__rea__inspect_go_binary",
+			"Inspect Go build info and module versions.", noParams)),
+		NewDeferredTool(mcpFake("mcp__rea__inspect_pe_resources",
+			"Inspect PE resources and headers.", noParams)),
+		NewDeferredTool(mcpFake("mcp__rea__search_strings",
+			"Search strings in a binary.", noParams)),
+		NewDeferredTool(mcpFake("mcp__google__search",
+			"Search the web.", noParams)),
+	}
+}
+
+func searchTools(t *testing.T, tools []fantasy.AgentTool, input string) string {
+	t.Helper()
+	res, err := NewToolSearchTool(tools, 5).Run(context.Background(),
+		fantasy.ToolCall{Name: ToolSearchToolName, Input: input})
+	require.NoError(t, err)
+	return res.Content
+}
+
+func TestToolSearchChineseAliases(t *testing.T) {
+	t.Parallel()
+
+	out := searchTools(t, aliasSurface(), `{"query":"反编译这个函数"}`)
+	assert.Contains(t, out, "mcp__rea__procedure_pseudo_code")
+
+	out = searchTools(t, aliasSurface(), `{"query":"字符串"}`)
+	assert.Contains(t, out, "mcp__rea__search_strings")
+}
+
+func TestToolSearchDoesNotSubstringMatchShortTokens(t *testing.T) {
+	t.Parallel()
+
+	out := searchTools(t, aliasSurface(), `{"query":"go"}`)
+	assert.Contains(t, out, "mcp__rea__inspect_go_binary")
+	assert.NotContains(t, out, "mcp__google__search")
+}
+
+func TestToolSearchEnglishAliases(t *testing.T) {
+	t.Parallel()
+
+	out := searchTools(t, aliasSurface(), `{"query":"exe resources"}`)
+	assert.Contains(t, out, "mcp__rea__inspect_pe_resources")
+}
