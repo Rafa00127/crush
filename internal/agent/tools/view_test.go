@@ -159,7 +159,7 @@ func TestViewToolBlocksOversizedImages(t *testing.T) {
 
 	workingDir := t.TempDir()
 	filePath := filepath.Join(workingDir, "large.png")
-	require.NoError(t, os.WriteFile(filePath, []byte(strings.Repeat("a", MaxViewSize+1)), 0o644))
+	require.NoError(t, os.WriteFile(filePath, []byte(strings.Repeat("a", MaxImageSize+1)), 0o644))
 
 	tool := newViewToolForTest(workingDir)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
@@ -170,6 +170,24 @@ func TestViewToolBlocksOversizedImages(t *testing.T) {
 
 	require.True(t, resp.IsError)
 	require.Contains(t, resp.Content, "Image file is too large")
+}
+
+func TestViewToolAllowsImagesAboveOldTextLimit(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	filePath := filepath.Join(workingDir, "medium.png")
+	require.NoError(t, os.WriteFile(filePath, []byte(strings.Repeat("a", MaxViewSize+1)), 0o644))
+
+	tool := newViewToolForTest(workingDir)
+	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
+	ctx = context.WithValue(ctx, SupportsImagesContextKey, true)
+	resp := runViewTool(t, tool, ctx, ViewParams{
+		FilePath: filePath,
+	})
+
+	require.False(t, resp.IsError)
+	require.Equal(t, "image/png", resp.MediaType)
 }
 
 func TestReadTextFileEnforcesMaxContentSize(t *testing.T) {

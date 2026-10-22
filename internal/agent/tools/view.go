@@ -35,12 +35,14 @@ var viewDescriptionTpl = template.Must(
 type viewDescriptionData struct {
 	DefaultReadLimit int
 	MaxViewSizeKB    int
+	MaxImageSizeKB   int
 }
 
 func viewDescription() string {
 	return renderTemplate(viewDescriptionTpl, viewDescriptionData{
 		DefaultReadLimit: DefaultReadLimit,
 		MaxViewSizeKB:    MaxViewSize / 1024,
+		MaxImageSizeKB:   MaxImageSize / 1024,
 	})
 }
 
@@ -74,6 +76,7 @@ type ViewResponseMetadata struct {
 const (
 	ViewToolName     = "read"
 	MaxViewSize      = 200 * 1024 // 200KB
+	MaxImageSize     = 5 * 1024 * 1024
 	DefaultReadLimit = 2000
 	MaxLineLength    = 2000
 )
@@ -205,9 +208,9 @@ func NewViewTool(
 
 			isSupportedImage, mimeType := getImageMimeType(filePath)
 			if isSupportedImage {
-				if fileInfo.Size() > MaxViewSize {
+				if fileInfo.Size() > MaxImageSize {
 					return fantasy.NewTextErrorResponse(fmt.Sprintf("Image file is too large (%d bytes). Maximum size is %d bytes",
-						fileInfo.Size(), MaxViewSize)), nil
+						fileInfo.Size(), MaxImageSize)), nil
 				}
 				if !GetSupportsImagesFromContext(ctx) {
 					return UnsupportedMediaResponse(GetModelNameFromContext(ctx)), nil
