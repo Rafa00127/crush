@@ -319,6 +319,66 @@ Crush 没有 DSH 那种 sandbox policy，runtime context 用 cwd/日期/git/perm
 
 web 工具形态、`question` 改造、LSP 合并、工具全局重命名、`minimal` preset。
 
+## 十一、实测：dshlike 与原版对比
+
+环境：Windows，`deepseek/deepseek-v4-flash`，同一份全局配置，项目内只放
+`permissions.allowed_tools`；每个任务单次运行，时间包含启动和 MCP 初始化。
+
+| 任务 | dshlike | 原版 | 结果 |
+|---|---|---|---|
+| 修 3 个算术 bug，跑测试 | 10.2s，6 次工具调用（3 bash / 2 read / 1 edit） | 12.5s，7 次（3 bash / 2 view / 2 edit） | 都修好，测试通过 |
+| 600 行文件里找错误函数（允许 shell/grep） | 9.0s，4 次（2 bash / 1 read / 1 edit） | 9.7s，4 次（1 glob / 1 bash / 1 view / 1 edit） | 都修好 |
+| 600 行文件，只允许 read（无 shell/grep） | **7.5s，2 次（1 read / 1 edit）** | **11.6s，5 次（4 view / 1 edit）** | 都修好 |
+
+最明显的差异是第三项：新默认 2000 行让 600 行文件一次读完；原版默认 200 行，
+模型分 4 次读（包括末尾的空块），多出 3 次工具调用和约 4 秒。
+
+其他观察：
+
+- bash 结果现在以 `[exit code: 0]` 结尾，原版是 `<cwd>...</cwd>`；两者都没有工具错误。
+- 简单任务里 dshlike 用了 1 次跨两个函数的 edit，原版用了 2 次小 edit；都正确，属于模型选择差异。
+- 单次运行噪声较大，10.2s vs 12.5s 不能当作稳定性能结论；第三项的结构性差异更有意义。
+- 固定前缀从 3246 词降到 723 词（另有约 175 词的 context reminder），这是结构变化，未做 token 级 A/B。
+
+构建注意：Go 1.24+ 会把 VCS 版本写进 `info.Main.Version`，覆盖 `-X version.Version`；
+要让 `crush --version` 显示自定义版本，构建时加 `-buildvcs=false`：
+
+```bash
+go build -buildvcs=false -trimpath \
+  -ldflags="-s -w -X github.com/charmbracelet/crush/internal/version.Version=v0.98.1-dshlike" \
+  -o crush-dshlike.exe .
+```
+
+### 旧 session 兼容性（实测）
+
+用原版创建 session，再用 dshlike `--session` 续跑：
+
+- 历史里的 `view` 调用被 DeepSeek 端点正常接受，新回合正确选择了 `read`。
+- 新增测试、`edit`、`bash` 都正常，`[exit code: 0]` 生效。
+- 跨版本的文件读后写校验仍然有效（filetracker 记录在同一个 DB 里）。
+
+注意：
+
+- 旧工具行在 TUI 里会退化成通用工具卡片，因为 `view` 不再匹配专用渲染；不影响上下文。
+- 旧配置里的 `permissions.allowed_tools: ["view"]` 和 hook matcher `^view$` 不再匹配新名，需要改成 `read`。
+- 旧技能或文档如果写着“用 view”，模型可能先调一次不存在的工具，再改用 `read`。
+- 其他 provider 是否同样接受历史里的未知工具名未测；DeepSeek 端点没有问题。
+- 旧历史的 offset 是 0-based，新 `read` 是 1-based；模型若模仿旧格式，offset > 0 时可能偏一行。
+
+### AGENTS.md 的优先级（实测）
+
+给项目加一条 `AGENTS.md` 规则：“回答前加 `BANANA-42`”，然后让它只回复 `OK`：
+
+- 原版（AGENTS.md 在 system）：`BANANA-42 OK`。
+- dshlike（AGENTS.md 在 user reminder）：3 次里 2 次 `BANANA-42 OK`，1 次只回复 `OK`。
+
+结论：user 角色可以承载 AGENTS.md，DSH 也是这么做的；但它会被用户当轮的明确指令覆盖。
+构建命令、代码风格、常用路径这类偏好适合放 AGENTS.md；安全、权限、禁止提交这类硬规则
+应继续放在 system、代码校验、权限或 hook 里，不要只依赖 AGENTS.md。
+
+
+
+
 
 
 
