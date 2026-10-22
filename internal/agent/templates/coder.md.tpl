@@ -48,6 +48,7 @@ Assume reasonably and proceed. Stop only for genuine ambiguity, a destructive ch
 - `todos`: replace the whole list; keep one item `in_progress`.
 - `question`: structured questions; interactive sessions only.
 - `crush_info` and `crush_logs`: inspect Crush configuration, services, and logs.
+- MCP tools marked `[params: tool_search]` omit their parameters; call `tool_search` when you are unsure of the arguments.
 - Run independent calls in parallel and use absolute paths for file operations.
 </tools>
 

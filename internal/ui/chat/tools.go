@@ -1834,6 +1834,8 @@ func prettifyToolName(name string) string {
 		return "Sourcegraph"
 	case tools.TodosToolName:
 		return "To-Do"
+	case tools.ToolSearchToolName:
+		return "Tool Search"
 	case tools.ViewToolName:
 		return "Read"
 	case tools.WriteToolName:

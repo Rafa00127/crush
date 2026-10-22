@@ -846,6 +846,51 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 	return result, nil
 }
 
+// applyToolSearch decides how MCP tools are presented to the model. Below the
+// threshold they are sent whole, as before. Past it, their schemas, by far the
+// largest block in the request, are withheld behind a tool_search tool that
+// serves them on demand.
+//
+// The saving is on turns that do not use an MCP tool, which is nearly all of
+// them. On turns that do need one, discovery costs roughly one extra turn.
+// Servers listed in options.tool_search.always_load stay eager.
+func (c *coordinator) applyToolSearch(mcpTools []*tools.Tool) []fantasy.AgentTool {
+	opts := c.cfg.Config().Options
+	// Deferring schemas without a way to load them would leave the model unable
+	// to call any MCP tool correctly, so a disabled tool_search disables the
+	// whole mechanism rather than half of it.
+	if slices.Contains(opts.DisabledTools, tools.ToolSearchToolName) ||
+		!opts.ToolSearchEnabled(len(mcpTools)) {
+		out := make([]fantasy.AgentTool, 0, len(mcpTools))
+		for _, t := range mcpTools {
+			out = append(out, t)
+		}
+		return out
+	}
+
+	out := make([]fantasy.AgentTool, 0, len(mcpTools)+1)
+	var deferred []fantasy.AgentTool
+	for _, t := range mcpTools {
+		// Keep a tool eager when its owner asked for that, or when its schema is
+		// small enough that a stub would not actually be shorter.
+		if opts.ToolSearchAlwaysLoaded(t.MCP()) || !tools.WorthDeferring(t) {
+			out = append(out, t)
+			continue
+		}
+		d := tools.NewDeferredTool(t)
+		deferred = append(deferred, d)
+		out = append(out, d)
+	}
+	if len(deferred) == 0 {
+		return out
+	}
+
+	out = append(out, tools.NewToolSearchTool(deferred, opts.ToolSearchMaxResults()))
+	slog.Debug("Tool search enabled",
+		"deferred", len(deferred), "eager_mcp", len(out)-len(deferred)-1)
+	return out
+}
+
 func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubAgent bool) ([]fantasy.AgentTool, error) {
 	var allTools []fantasy.AgentTool
 	if slices.Contains(agent.AllowedTools, AgentToolName) {
@@ -935,10 +980,11 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 		}
 	}
 
+	var mcpTools []*tools.Tool
 	for _, tool := range tools.GetMCPTools(c.permissions, c.cfg, c.cfg.WorkingDir()) {
 		if agent.AllowedMCP == nil {
 			// No MCP restrictions
-			filteredTools = append(filteredTools, tool)
+			mcpTools = append(mcpTools, tool)
 			continue
 		}
 		if len(agent.AllowedMCP) == 0 {
@@ -947,17 +993,18 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 			break
 		}
 
-		for mcp, tools := range agent.AllowedMCP {
+		for mcp, allowed := range agent.AllowedMCP {
 			if mcp != tool.MCP() {
 				continue
 			}
-			if len(tools) == 0 || slices.Contains(tools, tool.MCPToolName()) {
-				filteredTools = append(filteredTools, tool)
+			if len(allowed) == 0 || slices.Contains(allowed, tool.MCPToolName()) {
+				mcpTools = append(mcpTools, tool)
 				break
 			}
 			slog.Debug("MCP not allowed", "tool", tool.Name(), "agent", agent.Name)
 		}
 	}
+	filteredTools = append(filteredTools, c.applyToolSearch(mcpTools)...)
 	slices.SortFunc(filteredTools, func(a, b fantasy.AgentTool) int {
 		return strings.Compare(a.Info().Name, b.Info().Name)
 	})

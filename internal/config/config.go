@@ -480,6 +480,75 @@ type Options struct {
 	DisabledSkills            []string     `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=crush-config"`
 	RequestTimeout            *int         `json:"request_timeout,omitempty" jsonschema:"description=Timeout in seconds for each LLM API request. Streaming responses are aborted only after this much inactivity\\, so slow but active streams are never killed. 0 disables it\\, negative values are invalid.,default=60,example=120,example=300,example=0"`
 	MaxBackgroundJobs         *int         `json:"max_background_jobs,omitempty" jsonschema:"description=How many background shell jobs may run at once. Jobs that have finished never count against it. 0 or negative restores the default.,default=50,example=10,example=200"`
+	// ToolSearch configures on-demand loading of MCP tool schemas. Nil means
+	// defaults (auto-enable once enough MCP tools are connected).
+	ToolSearch *ToolSearchOptions `json:"tool_search,omitempty" jsonschema:"description=On-demand MCP tool schema loading"`
+}
+
+// ToolSearchOptions configures on-demand loading of MCP tool schemas.
+//
+// Every connected MCP tool's full JSON schema is otherwise sent on every
+// request. That block is billed on every turn and it is where most of the
+// MCP cost lives. With tool search on, MCP tools are sent as a name plus a
+// one-line summary, and the model loads a full schema only when it needs one.
+type ToolSearchOptions struct {
+	// Enabled forces tool search on or off. Nil auto-enables it once the number
+	// of connected MCP tools reaches MinTools, which keeps small setups eager.
+	Enabled *bool `json:"enabled,omitempty" jsonschema:"description=Force on-demand MCP tool loading on or off. Omit to enable automatically past min_tools"`
+	// MinTools is the connected-MCP-tool count at which tool search
+	// auto-enables. Defaults to 25.
+	MinTools int `json:"min_tools,omitempty" jsonschema:"description=Auto-enable tool search at this many connected MCP tools,default=25"`
+	// AlwaysLoad names MCP servers whose tools keep their full schemas. Use it
+	// for servers called often enough that the discovery round-trip costs more
+	// than the schema bytes.
+	AlwaysLoad []string `json:"always_load,omitempty" jsonschema:"description=MCP server names whose tools keep full schemas,example=context7"`
+	// MaxResults caps how many schemas one tool_search call returns. Defaults
+	// to 5.
+	MaxResults int `json:"max_results,omitempty" jsonschema:"description=Maximum tool schemas returned per search,default=5"`
+}
+
+const (
+	defaultToolSearchMinTools   = 25
+	defaultToolSearchMaxResults = 5
+)
+
+// ToolSearchEnabled reports whether MCP schemas should be loaded on demand,
+// given how many MCP tools are connected. An explicit Enabled always wins.
+func (o Options) ToolSearchEnabled(mcpToolCount int) bool {
+	if o.ToolSearch != nil && o.ToolSearch.Enabled != nil {
+		return *o.ToolSearch.Enabled
+	}
+	return mcpToolCount >= o.ToolSearchMinTools()
+}
+
+// ToolSearchMinTools returns the auto-enable threshold. Defaults to 25.
+func (o Options) ToolSearchMinTools() int {
+	if o.ToolSearch != nil && o.ToolSearch.MinTools > 0 {
+		return o.ToolSearch.MinTools
+	}
+	return defaultToolSearchMinTools
+}
+
+// ToolSearchMaxResults returns the per-search schema cap. Defaults to 5.
+func (o Options) ToolSearchMaxResults() int {
+	if o.ToolSearch != nil && o.ToolSearch.MaxResults > 0 {
+		return o.ToolSearch.MaxResults
+	}
+	return defaultToolSearchMaxResults
+}
+
+// ToolSearchAlwaysLoaded reports whether an MCP server's tools keep their full
+// schemas rather than being deferred.
+func (o Options) ToolSearchAlwaysLoaded(server string) bool {
+	if o.ToolSearch == nil {
+		return false
+	}
+	for _, s := range o.ToolSearch.AlwaysLoad {
+		if strings.EqualFold(strings.TrimSpace(s), server) {
+			return true
+		}
+	}
+	return false
 }
 
 // DefaultMaxBackgroundJobs is how many background shell jobs may run at once
@@ -1066,6 +1135,7 @@ func allToolNames() []string {
 		"write",
 		"list_mcp_resources",
 		"read_mcp_resource",
+		"tool_search",
 	}
 }
 
