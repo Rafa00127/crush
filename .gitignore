@@ -54,3 +54,7 @@ manpages/
 completions/crush.*sh
 .prettierignore
 .task
+
+# Fork-local analysis notes and screenshots
+DSH_PARITY.md
+/*.png
