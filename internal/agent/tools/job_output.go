@@ -50,6 +50,8 @@ func NewJobOutputTool(spillDir string) fantasy.AgentTool {
 			}
 
 			stdout, stderr, done, err := bgShell.GetOutput()
+			stdout = shell.DecodeTerminalText(stdout)
+			stderr = shell.DecodeTerminalText(stderr)
 
 			var outputParts []string
 			if stdout != "" {

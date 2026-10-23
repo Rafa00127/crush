@@ -385,6 +385,11 @@ func formatOutput(stdout, stderr string, execErr error, spillDir string) string 
 	interrupted := shell.IsInterrupt(execErr)
 	exitCode := shell.ExitCode(execErr)
 
+	// Repair ANSI-code-page output before truncation, so the cap measures
+	// UTF-8 text and the spilled full output stays readable.
+	stdout = shell.DecodeTerminalText(stdout)
+	stderr = shell.DecodeTerminalText(stderr)
+
 	stdout = truncateOutput(stdout, spillDir)
 	stderr = truncateOutput(stderr, spillDir)
 
