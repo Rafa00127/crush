@@ -387,8 +387,8 @@ func formatOutput(stdout, stderr string, execErr error, spillDir string) string 
 
 	// Repair ANSI-code-page output before truncation, so the cap measures
 	// UTF-8 text and the spilled full output stays readable.
-	stdout = shell.DecodeTerminalText(stdout)
-	stderr = shell.DecodeTerminalText(stderr)
+	stdout = shell.DecodeTerminalTextLines(stdout)
+	stderr = shell.DecodeTerminalTextLines(stderr)
 
 	stdout = truncateOutput(stdout, spillDir)
 	stderr = truncateOutput(stderr, spillDir)

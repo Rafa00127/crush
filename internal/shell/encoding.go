@@ -2,6 +2,7 @@ package shell
 
 import (
 	"runtime"
+	"strings"
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -28,6 +29,29 @@ func DecodeTerminalText(s string) string {
 		return s
 	}
 	return decodeLegacyText(s)
+}
+
+// DecodeTerminalTextLines is DecodeTerminalText applied line by line.
+//
+// One tool result often mixes both sides of the code page boundary: the shell's
+// own builtins write UTF-8, while a child process started in the same command
+// writes the ANSI code page. Decoding such a stream as a whole fails the
+// round-trip guard, so the GBK half is lost to U+FFFD. Per line it succeeds:
+// UTF-8 lines are already valid and pass through untouched, ANSI-code-page
+// lines decode exactly.
+//
+// Splitting on "\n" is safe for every code page this repairs, because a GBK or
+// Shift-JIS trail byte is always 0x40-0xFE and never 0x0A. A "\r" left at the
+// end of a line does not break the round-trip either.
+func DecodeTerminalTextLines(s string) string {
+	if runtime.GOOS != "windows" || s == "" || utf8.ValidString(s) {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = decodeLegacyText(line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // decodeLegacyText holds the platform-independent body so the behaviour stays

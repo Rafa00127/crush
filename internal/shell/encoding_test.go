@@ -77,6 +77,79 @@ func TestDecodeLegacyTextIsIdempotent(t *testing.T) {
 	require.Equal(t, decoded, decodeLegacyText(decoded))
 }
 
+func TestDecodeTerminalTextLines(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "valid utf8 passes through",
+			in:   "中文标签\n另一个标签\n",
+			want: "中文标签\n另一个标签\n",
+		},
+		{
+			name: "ascii passes through",
+			in:   "plain ascii\n",
+			want: "plain ascii\n",
+		},
+		{
+			name: "empty passes through",
+			in:   "",
+			want: "",
+		},
+		{
+			name: "gbk only",
+			in:   "\xd6\xd0\xce\xc4\xb2\xe2\xca\xd4\n",
+			want: "中文测试\n",
+		},
+		{
+			// The case this exists for: the shell's own UTF-8 label and a
+			// child process's CP936 line arriving in one result.
+			name: "mixed utf8 line and gbk line",
+			in:   "中文标签\n\xbd\xf8\xb6\xc8\xbc\xc7\xc2\xbc\xd0\xd0\xca\xfd\n",
+			want: "中文标签\n进度记录行数\n",
+		},
+		{
+			name: "gbk line between utf8 lines",
+			in:   "头部\n\xc7\xa7\xc1\xb5\xcd\xf2\xbb\xa8\n尾部\n",
+			want: "头部\n千恋万花\n尾部\n",
+		},
+		{
+			name: "gbk lines with crlf",
+			in:   "TOTAL=1\r\n\xd6\xd0\xce\xc4\r\n",
+			want: "TOTAL=1\r\n中文\r\n",
+		},
+		{
+			name: "truncated gbk tail keeps the lossy path",
+			in:   "中文标签\n\xd6\xd0\xce\xc4\xb2",
+			want: "中文标签\n\xd6\xd0\xce\xc4\xb2",
+		},
+		{
+			name: "nul bytes stay binary",
+			in:   "\x00\xd6\xd0\xce\xc4\n中文\n",
+			want: "\x00\xd6\xd0\xce\xc4\n中文\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, DecodeTerminalTextLines(tt.in))
+		})
+	}
+}
+
+func TestDecodeTerminalTextLinesIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	decoded := DecodeTerminalTextLines("标签\n\xd6\xd0\xce\xc4\n")
+	require.Equal(t, "标签\n中文\n", decoded)
+	require.Equal(t, decoded, DecodeTerminalTextLines(decoded))
+}
+
 func TestLooksBinary(t *testing.T) {
 	t.Parallel()
 
