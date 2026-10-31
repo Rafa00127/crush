@@ -32,6 +32,10 @@ type Prompt struct {
 	// provider rather than by a local tool, so templates describe it
 	// accordingly.
 	serverSideSearch bool
+	// webSearch reports that the agent has a web_search tool (a provider
+	// search endpoint is configured), so templates can route work between
+	// it and agentic_fetch.
+	webSearch bool
 }
 
 type PromptDat struct {
@@ -49,6 +53,8 @@ type PromptDat struct {
 	// ServerSideSearch is true when the provider runs web search
 	// itself, so the sub-agent prompt describes that tool shape.
 	ServerSideSearch bool
+	// WebSearch is true when the agent has a web_search tool.
+	WebSearch bool
 }
 
 type ContextFile struct {
@@ -89,6 +95,14 @@ func WithWorkingDir(workingDir string) Option {
 func WithServerSideSearch(enabled bool) Option {
 	return func(p *Prompt) {
 		p.serverSideSearch = enabled
+	}
+}
+
+// WithWebSearch marks the agent as having a web_search tool, so templates can
+// say when to search directly and when to delegate to agentic_fetch.
+func WithWebSearch(enabled bool) Option {
+	return func(p *Prompt) {
+		p.webSearch = enabled
 	}
 }
 
@@ -263,6 +277,7 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 		Date:             p.now().Format("1/2/2006"),
 		AvailSkillXML:    availSkillXML,
 		ServerSideSearch: p.serverSideSearch,
+		WebSearch:        p.webSearch,
 	}
 	if isGit {
 		var err error

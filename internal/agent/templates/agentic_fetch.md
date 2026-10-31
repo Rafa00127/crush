@@ -1,1 +1,1 @@
-Fetch a URL or search the web using an AI sub-agent that can extract, summarize, and answer questions. Slower and costlier than fetch; use fetch for raw content or API responses.
+Fetch a URL or search the web using an AI sub-agent that can extract, summarize, and answer questions. Slower and costlier than fetch; use fetch for raw content or API responses. Use it when the answer needs several pages or when the raw text would swamp your context; for a narrow question where a few URLs and summaries are enough, call web_search directly instead.

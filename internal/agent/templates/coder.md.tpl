@@ -44,7 +44,7 @@ Assume reasonably and proceed. Stop only for genuine ambiguity, a destructive ch
 - `bash`: fresh shell per call; pass `working_dir` instead of `cd`; check `[exit code: N]`; use `run_in_background` for servers and watchers.
 - `job_output` and `job_kill`: read or stop background jobs.
 - `agent`: read-only sub-agent with `glob`, `grep`, `ls`, and `read`; it cannot edit files or run commands.
-- `fetch`: retrieve a URL. `agentic_fetch`: delegate multi-step web research.
+- `fetch`: retrieve one known URL, raw content, no AI. `agentic_fetch`: delegate multi-page research or extraction when the raw text would swamp your context.{{ if .WebSearch }} `web_search`: find URLs and summaries for one narrow question; its results land in your context, so search, then fetch only the pages you need.{{ end }}
 - `todos`: replace the whole list; keep one item `in_progress`.
 - `question`: structured questions; interactive sessions only.
 - `crush_info` and `crush_logs`: inspect Crush configuration, services, and logs.

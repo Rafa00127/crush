@@ -20,6 +20,21 @@ func renderAgentTemplate(t *testing.T, name string, raw []byte, data prompt.Prom
 	return buf.String()
 }
 
+func TestCoderPromptWebSearchRouting(t *testing.T) {
+	t.Parallel()
+
+	base := prompt.PromptDat{WorkingDir: "/workspace", Platform: "linux", Date: "1/2/2026"}
+
+	without := renderAgentTemplate(t, "coder", coderPromptTmpl, base)
+	require.NotContains(t, without, "`web_search`")
+	require.Contains(t, without, "`agentic_fetch`: delegate multi-page research")
+
+	with := base
+	with.WebSearch = true
+	out := renderAgentTemplate(t, "coder", coderPromptTmpl, with)
+	require.Contains(t, out, "`web_search`: find URLs and summaries")
+}
+
 func TestAgentPromptTemplatesRender(t *testing.T) {
 	t.Parallel()
 
