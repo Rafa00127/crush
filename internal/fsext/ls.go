@@ -221,6 +221,22 @@ func (dl *directoryLister) getCombinedMatcher(dir string) gitignore.Matcher {
 	})
 }
 
+// binaryFileExts lists extensions that stay listed even when a common
+// pattern or a .gitignore would hide them. Inspecting binaries is a
+// first-class use of the listing tools, so a project that ignores build
+// output must not make them invisible.
+var binaryFileExts = map[string]bool{
+	".exe":   true,
+	".dll":   true,
+	".so":    true,
+	".dylib": true,
+	".o":     true,
+}
+
+func isBinaryFile(path string) bool {
+	return binaryFileExts[strings.ToLower(filepath.Ext(path))]
+}
+
 // shouldIgnore checks if a path should be ignored based on gitignore rules.
 // This uses a combined matcher that includes all ancestor patterns for O(1) matching.
 func (dl *directoryLister) shouldIgnore(path string, ignorePatterns []string, isDir bool) bool {
@@ -238,6 +254,12 @@ func (dl *directoryLister) shouldIgnore(path string, ignorePatterns []string, is
 				return true
 			}
 		}
+	}
+
+	// Binaries survive the built-in and project ignore rules below, but
+	// only when the caller did not ask for them to be skipped explicitly.
+	if !isDir && isBinaryFile(path) {
+		return false
 	}
 
 	// Don't apply gitignore rules to the root directory itself.
