@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
+	"charm.land/catwalk/v3/pkg/catwalk"
 	"charm.land/fantasy"
-	"charm.land/fantasy/providers/anthropic"
 
 	"github.com/charmbracelet/crush/internal/agent/prompt"
 	"github.com/charmbracelet/crush/internal/agent/tools"
@@ -106,38 +106,19 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 			}
 			defer os.RemoveAll(tmpDir)
 
-			// Web search is the sub-agent's primary job, so choose the model
-			// it runs on with search capability in mind. Providers speaking
-			// the Anthropic Messages API can run web search server-side via
-			// a provider-defined tool, which beats scraping DuckDuckGo
-			// locally (faster, no rate limits, no proxy needed). When the
-			// small model's provider cannot do that but the large model's
-			// can, promote the sub-agent to the large model instead of
-			// silently degrading to the local scraper.
-			large, small, err := c.buildAgentModels(ctx, true)
-			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error building models: %s", err)
-			}
+			// Web search is the sub-agent's primary job. A configured provider
+			// search endpoint works for any provider and takes precedence over
+			// the Anthropic-only server-side tool, which beats scraping
+			// DuckDuckGo locally.
+			small := c.smallOnlyModels().Small
 
-			subAgentModel := small
-			subAgentProviderCfg, ok := c.cfg.Config().Providers.Get(small.ModelCfg.Provider)
+			smallProviderCfg, ok := c.cfg.Config().Providers.Get(small.ModelCfg.Provider)
 			if !ok {
 				return fantasy.ToolResponse{}, errors.New("small model provider not configured")
 			}
-			// A configured provider search endpoint works for any provider
-			// and takes precedence over the Anthropic-only server-side tool.
+
 			providerSearch := tools.ProviderSearchFromConfig(c.cfg.Config())
-			serverSideSearch := false
-			if providerSearch == nil {
-				serverSideSearch = subAgentProviderCfg.Type == anthropic.Name
-				if !serverSideSearch {
-					if largeCfg, found := c.cfg.Config().Providers.Get(large.ModelCfg.Provider); found && largeCfg.Type == anthropic.Name {
-						subAgentModel = large
-						subAgentProviderCfg = largeCfg
-						serverSideSearch = true
-					}
-				}
-			}
+			serverSideSearch := providerSearch == nil && smallProviderCfg.ID == string(catwalk.InferenceProviderAnthropic)
 
 			var fullPrompt string
 
@@ -189,7 +170,7 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 				return fantasy.ToolResponse{}, fmt.Errorf("error creating prompt: %s", err)
 			}
 
-			systemPrompt, err := promptTemplate.Build(ctx, subAgentModel.Model.Provider(), subAgentModel.Model.Model(), c.cfg)
+			systemPrompt, err := promptTemplate.Build(ctx, small.Model.Provider(), small.Model.Model(), c.cfg)
 			if err != nil {
 				return fantasy.ToolResponse{}, fmt.Errorf("error building system prompt: %s", err)
 			}
@@ -219,12 +200,10 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 			// the user's hooks N times per delegated turn.
 
 			agent := NewSessionAgent(SessionAgentOptions{
-				LargeModel:           subAgentModel, // Use one model for both (fetch doesn't need both)
-				SmallModel:           subAgentModel,
-				SystemPromptPrefix:   subAgentProviderCfg.SystemPromptPrefix,
+				Models:               c.smallOnlyModels,
+				SystemPromptPrefix:   smallProviderCfg.SystemPromptPrefix,
 				SystemPrompt:         systemPrompt,
 				DisableAutoSummarize: c.cfg.Config().Options.DisableAutoSummarize,
-				IsYolo:               c.permissions.SkipRequests(),
 				Sessions:             c.sessions,
 				Messages:             c.messages,
 				Tools:                fetchTools,
