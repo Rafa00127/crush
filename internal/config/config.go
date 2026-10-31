@@ -483,6 +483,55 @@ type Options struct {
 	// ToolSearch configures on-demand loading of MCP tool schemas. Nil means
 	// defaults (auto-enable once enough MCP tools are connected).
 	ToolSearch *ToolSearchOptions `json:"tool_search,omitempty" jsonschema:"description=On-demand MCP tool schema loading"`
+	// WebSearch points the web_search tool at a provider-hosted search
+	// endpoint instead of the built-in DuckDuckGo scraper. Nil keeps the
+	// scraper.
+	WebSearch *WebSearchOptions `json:"web_search,omitempty" jsonschema:"description=Provider-hosted web search endpoint used by the web_search tool"`
+}
+
+// WebSearchOptions configures a provider-hosted search endpoint for the
+// web_search tool. Either name a configured provider to borrow its base URL
+// and API key, or set URL (plus APIKey) explicitly; explicit values win.
+//
+// The request and response shapes follow DeepSeek's tools/search API
+// (POST {query, count, need_content} → {results: [...]}), which is what most
+// provider search endpoints accept.
+type WebSearchOptions struct {
+	// Enabled turns the provider-hosted backend on. Nil or false keeps the
+	// DuckDuckGo scraper, which needs no credentials.
+	Enabled *bool `json:"enabled,omitempty" jsonschema:"description=Use the configured provider search endpoint instead of DuckDuckGo,default=false"`
+	// Provider names a configured provider whose BaseURL and APIKey are
+	// reused, e.g. "deepseek".
+	Provider string `json:"provider,omitempty" jsonschema:"description=Configured provider whose base URL and API key are reused,example=deepseek"`
+	// URL is the full search endpoint and overrides Provider and Path.
+	URL string `json:"url,omitempty" jsonschema:"description=Full search endpoint URL; overrides provider and path,format=uri,example=https://api.deepseek.com/v1/tools/search"`
+	// Path is appended to the provider BaseURL when URL is empty.
+	Path string `json:"path,omitempty" jsonschema:"description=Search path appended to the provider base URL,default=/v1/tools/search"`
+	// APIKey overrides the provider's key. Supports the same shell expansion
+	// as provider keys, so $VAR works.
+	APIKey string `json:"api_key,omitempty" jsonschema:"description=API key for the search endpoint; defaults to the provider's key,example=$DEEPSEEK_API_KEY"`
+	// Headers are extra HTTP headers sent with every search request.
+	Headers map[string]string `json:"headers,omitempty" jsonschema:"description=Extra HTTP headers sent with each search request"`
+	// Count is how many results to request per search. Defaults to 10.
+	Count int `json:"count,omitempty" jsonschema:"description=Results requested per search,default=10,example=10"`
+	// NeedContent asks the endpoint to return page content alongside
+	// summaries. Costs more tokens and is off by default.
+	NeedContent bool `json:"need_content,omitempty" jsonschema:"description=Request page content in addition to summaries,default=false"`
+	// Timeout bounds a single search request, in seconds. Defaults to 30.
+	Timeout int `json:"timeout,omitempty" jsonschema:"description=Timeout for one search request in seconds,default=30,example=30"`
+}
+
+// IsEnabled reports whether the provider-hosted search backend is on.
+func (o WebSearchOptions) IsEnabled() bool {
+	return ptrValOr(o.Enabled, false)
+}
+
+// GetTimeout returns the configured request timeout or the default.
+func (o WebSearchOptions) GetTimeout() time.Duration {
+	if o.Timeout <= 0 {
+		return 30 * time.Second
+	}
+	return time.Duration(o.Timeout) * time.Second
 }
 
 // ToolSearchOptions configures on-demand loading of MCP tool schemas.
@@ -1136,6 +1185,7 @@ func allToolNames() []string {
 		"list_mcp_resources",
 		"read_mcp_resource",
 		"tool_search",
+		"web_search",
 	}
 }
 

@@ -665,6 +665,10 @@
         "tool_search": {
           "$ref": "#/$defs/ToolSearchOptions",
           "description": "On-demand MCP tool schema loading"
+        },
+        "web_search": {
+          "$ref": "#/$defs/WebSearchOptions",
+          "description": "Provider-hosted web search endpoint used by the web_search tool"
         }
       },
       "additionalProperties": false,
@@ -1047,6 +1051,72 @@
         },
         "glob": {
           "$ref": "#/$defs/ToolGlob"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "WebSearchOptions": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Use the configured provider search endpoint instead of DuckDuckGo",
+          "default": false
+        },
+        "provider": {
+          "type": "string",
+          "description": "Configured provider whose base URL and API key are reused",
+          "examples": [
+            "deepseek"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Full search endpoint URL; overrides provider and path",
+          "examples": [
+            "https://api.deepseek.com/v1/tools/search"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "description": "Search path appended to the provider base URL",
+          "default": "/v1/tools/search"
+        },
+        "api_key": {
+          "type": "string",
+          "description": "API key for the search endpoint; defaults to the provider's key",
+          "examples": [
+            "$DEEPSEEK_API_KEY"
+          ]
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Extra HTTP headers sent with each search request"
+        },
+        "count": {
+          "type": "integer",
+          "description": "Results requested per search",
+          "default": 10,
+          "examples": [
+            10
+          ]
+        },
+        "need_content": {
+          "type": "boolean",
+          "description": "Request page content in addition to summaries",
+          "default": false
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Timeout for one search request in seconds",
+          "default": 30,
+          "examples": [
+            30
+          ]
         }
       },
       "additionalProperties": false,

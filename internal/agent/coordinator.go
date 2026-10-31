@@ -232,7 +232,10 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		return nil, errCoderAgentNotConfigured
 	}
 
-	coderPrompt, err := coderPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))
+	coderPrompt, err := coderPrompt(
+		prompt.WithWorkingDir(c.cfg.WorkingDir()),
+		prompt.WithWebSearch(tools.ProviderSearchFromConfig(c.cfg.Config()) != nil),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -944,6 +947,13 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 		tools.NewViewTool(c.lspManager, c.permissions, c.filetracker, c.skillTracker, c.cfg.WorkingDir(), c.cfg.Config().Options.SkillsPaths...),
 		tools.NewWriteTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
 	)
+
+	// A configured provider search endpoint gives the agent a web search
+	// tool of its own. Without one, search stays inside agentic_fetch, whose
+	// sub-agent owns the only web_search tool.
+	if providerSearch := tools.ProviderSearchFromConfig(c.cfg.Config()); providerSearch != nil {
+		allTools = append(allTools, tools.NewWebSearchTool(nil, providerSearch))
+	}
 
 	// Question tool is interactive-only and not available to sub-agents.
 	if !isSubAgent && c.interactive {

@@ -150,6 +150,10 @@ func Load(ctx context.Context, workingDir, dataDir string, debug bool) (*ConfigS
 	// like AWS_PROFILE are visible to the AWS SDK credential chain.
 	cfg.applyEnv(valueResolver)
 
+	// The provider-hosted search endpoint uses the same $VAR / $(cmd)
+	// expansion as provider keys and headers.
+	cfg.resolveWebSearch(valueResolver)
+
 	if err := cfg.configureProviders(ctx, store, env, valueResolver, store.knownProviders); err != nil {
 		return nil, fmt.Errorf("failed to configure providers: %w", err)
 	}
@@ -476,6 +480,36 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 	}
 
 	return nil
+}
+
+// resolveWebSearch expands $VAR and $(cmd) references in the configured
+// provider-hosted search endpoint, matching how provider keys and headers
+// resolve. A failing expansion is reported and leaves the literal value in
+// place so the request fails with a visible error instead of a silent empty
+// credential.
+func (c *Config) resolveWebSearch(resolver VariableResolver) {
+	if c == nil || c.Options == nil || c.Options.WebSearch == nil {
+		return
+	}
+
+	ws := c.Options.WebSearch
+	if ws.APIKey != "" {
+		resolved, err := resolver.ResolveValue(ws.APIKey)
+		if err != nil {
+			slog.Warn("Failed to resolve web search API key", "error", err)
+		} else {
+			ws.APIKey = resolved
+		}
+	}
+
+	for key, value := range ws.Headers {
+		resolved, err := resolver.ResolveValue(value)
+		if err != nil {
+			slog.Warn("Failed to resolve web search header", "header", key, "error", err)
+			continue
+		}
+		ws.Headers[key] = resolved
+	}
 }
 
 // applyEnv sets top-level env vars from the config. Keys are sorted for

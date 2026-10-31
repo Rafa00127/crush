@@ -124,12 +124,18 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 			if !ok {
 				return fantasy.ToolResponse{}, errors.New("small model provider not configured")
 			}
-			serverSideSearch := subAgentProviderCfg.Type == anthropic.Name
-			if !serverSideSearch {
-				if largeCfg, found := c.cfg.Config().Providers.Get(large.ModelCfg.Provider); found && largeCfg.Type == anthropic.Name {
-					subAgentModel = large
-					subAgentProviderCfg = largeCfg
-					serverSideSearch = true
+			// A configured provider search endpoint works for any provider
+			// and takes precedence over the Anthropic-only server-side tool.
+			providerSearch := tools.ProviderSearchFromConfig(c.cfg.Config())
+			serverSideSearch := false
+			if providerSearch == nil {
+				serverSideSearch = subAgentProviderCfg.Type == anthropic.Name
+				if !serverSideSearch {
+					if largeCfg, found := c.cfg.Config().Providers.Get(large.ModelCfg.Provider); found && largeCfg.Type == anthropic.Name {
+						subAgentModel = large
+						subAgentProviderCfg = largeCfg
+						serverSideSearch = true
+					}
 				}
 			}
 
@@ -204,7 +210,7 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 			if serverSideSearch {
 				providerTools = append(providerTools, tools.NewAnthropicWebSearchTool())
 			} else {
-				fetchTools = append(fetchTools, tools.NewWebSearchTool(client))
+				fetchTools = append(fetchTools, tools.NewWebSearchTool(client, providerSearch))
 			}
 
 			// Sub-agent tools run without hook interception. The top-level
