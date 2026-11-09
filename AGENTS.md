@@ -11,6 +11,19 @@ agent skills.
 
 The module path is `github.com/charmbracelet/crush`.
 
+## Local Fork Notes
+
+This is a personal fork on branch `local/dshlike`. Before building or shipping,
+read [NOTES.md](NOTES.md): it records the local build and deploy convention
+(stripped binary, version injection, deploying over a running `crush.exe`, and
+why the old executable must be renamed first).
+
+Before changing anything that upstream also owns — or before syncing upstream —
+read [FORK_CHANGES.md](FORK_CHANGES.md): it lists every local divergence from
+`origin/main`, grouped by area, with the reason and the files to conflict-check.
+`FORK_MAINTENANCE.md` is not tracked by git; upstream sync steps also live in the
+`fork-maintenance` skill.
+
 ## Architecture
 
 ```
