@@ -18,6 +18,10 @@ const (
 	// CompletedJobRetention is how long a finished job's output stays
 	// readable.
 	CompletedJobRetention = 8 * time.Hour
+	// KillTimeout bounds how long Kill waits for a cancelled shell to
+	// return. It only has to cover process teardown, which the exec
+	// handlers bound themselves.
+	KillTimeout = 5 * time.Second
 )
 
 // BackgroundShell represents a shell running in the background.
@@ -33,7 +37,8 @@ type BackgroundShell struct {
 	stderr      *cappedBuffer
 	done        chan struct{}
 	exitErr     error
-	completedAt atomic.Int64 // Unix timestamp when job completed (0 if still running)
+	startedAt   time.Time
+	completedAt atomic.Int64 // Unix nanoseconds when the job completed (0 if still running)
 }
 
 // BackgroundShellManager manages background shell instances.
@@ -91,6 +96,7 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 		stdout:      newCappedBuffer(maxKeptOutput),
 		stderr:      newCappedBuffer(maxKeptOutput),
 		done:        make(chan struct{}),
+		startedAt:   time.Now(),
 	}
 
 	m.shells[id] = bgShell
@@ -101,7 +107,7 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 		err := shell.ExecStream(shellCtx, command, bgShell.stdout, bgShell.stderr)
 
 		bgShell.exitErr = err
-		bgShell.completedAt.Store(time.Now().Unix())
+		bgShell.completedAt.Store(time.Now().UnixNano())
 	}()
 
 	return bgShell, nil
@@ -111,7 +117,7 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 // MaxFinishedJobs, and reports how many jobs are still running. Callers
 // must hold m.mu.
 func (m *BackgroundShellManager) prune() (running int) {
-	cutoff := time.Now().Add(-CompletedJobRetention).Unix()
+	cutoff := time.Now().Add(-CompletedJobRetention).UnixNano()
 	var finished []*BackgroundShell
 	for id, shell := range m.shells {
 		switch at := shell.completedAt.Load(); {
@@ -162,14 +168,33 @@ func (m *BackgroundShellManager) Remove(id string) error {
 }
 
 // Kill terminates a background shell by ID.
+//
+// The wait is bounded: a command whose process cannot be reaped (an unkillable
+// child, a wedged interpreter) must not block the caller — the job_kill tool and
+// the agent's own cancel path both go through here, so hanging would freeze the
+// turn with no way out but killing Crush. A shell that does not stop in time
+// goes back into the manager so a later job_kill can retry it.
 func (m *BackgroundShellManager) Kill(id string) error {
+	return m.killWithin(id, KillTimeout)
+}
+
+// killWithin is Kill with an explicit wait, so the timeout path stays testable
+// without sleeping for the real budget.
+func (m *BackgroundShellManager) killWithin(id string, wait time.Duration) error {
 	shell, err := m.take(id)
 	if err != nil {
 		return err
 	}
 	shell.cancel()
-	<-shell.done
-	return nil
+	select {
+	case <-shell.done:
+		return nil
+	case <-time.After(wait):
+		m.mu.Lock()
+		m.shells[id] = shell
+		m.mu.Unlock()
+		return fmt.Errorf("background shell %s did not stop within %s; it is still running and may need to be stopped by hand", id, wait)
+	}
 }
 
 // BackgroundShellInfo contains information about a background shell.
@@ -244,4 +269,37 @@ func (bs *BackgroundShell) WaitContext(ctx context.Context) bool {
 	case <-ctx.Done():
 		return false
 	}
+}
+
+// Elapsed reports how long the job has been running, or how long it ran before
+// finishing.
+func (bs *BackgroundShell) Elapsed() time.Duration {
+	end := time.Now()
+	if at := bs.completedAt.Load(); at != 0 {
+		end = time.Unix(0, at)
+	}
+	return end.Sub(bs.startedAt)
+}
+
+// IdleFor reports how long the job has produced no output. A job that has not
+// written anything yet is idle since it started.
+//
+// This is the only progress signal available for a command that is still
+// running: a large idle time next to a completed-looking command is what tells
+// "stuck or waiting on input" apart from "busy but quiet". It cannot tell the
+// two apart on its own, so callers must report it rather than act on it.
+func (bs *BackgroundShell) IdleFor() time.Duration {
+	last := bs.startedAt
+	if t := bs.stdout.LastWrite(); t.After(last) {
+		last = t
+	}
+	if t := bs.stderr.LastWrite(); t.After(last) {
+		last = t
+	}
+	return time.Since(last)
+}
+
+// OutputWritten reports how many bytes stdout and stderr have carried in total.
+func (bs *BackgroundShell) OutputWritten() int64 {
+	return bs.stdout.Written() + bs.stderr.Written()
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/shell"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 type BashParams struct {
@@ -25,7 +26,7 @@ type BashParams struct {
 	Command             string `json:"command" description:"The command to execute"`
 	WorkingDir          string `json:"working_dir,omitempty" description:"The working directory to execute the command in (defaults to current directory)"`
 	RunInBackground     bool   `json:"run_in_background,omitempty" description:"Set to true (boolean) to run this command in the background. Use job_output to read the output later."`
-	AutoBackgroundAfter int    `json:"auto_background_after,omitempty" description:"Seconds to wait before automatically moving the command to a background job (default: 60)"`
+	AutoBackgroundAfter int    `json:"auto_background_after,omitempty" description:"Seconds to wait before moving a still-running command to the background and freeing the turn. Defaults to the configured auto_background_after"`
 }
 
 type BashPermissionsParams struct {
@@ -49,9 +50,18 @@ type BashResponseMetadata struct {
 const (
 	BashToolName = "bash"
 
-	DefaultAutoBackgroundAfter = 60 // Commands taking longer automatically become background jobs
-	MaxOutputLength            = 30000
-	BashNoOutput               = "no output"
+	// DefaultAutoBackgroundAfter is the wait used when the caller passes no
+	// configured value; config.Options.GetAutoBackgroundAfter normally
+	// supplies the real number.
+	DefaultAutoBackgroundAfter = config.DefaultAutoBackgroundAfter
+	// RedirectedOutputGrace is how long a command that writes its output to
+	// a file is watched before it is moved to background. Such a command
+	// never produces anything on the captured streams, so waiting the full
+	// threshold buys no information; the grace only exists to catch an
+	// immediate failure, and the file is what the caller reads afterwards.
+	RedirectedOutputGrace = 2 * time.Second
+	MaxOutputLength       = 30000
+	BashNoOutput          = "no output"
 )
 
 //go:embed bash.md.tpl
@@ -252,7 +262,7 @@ func blockFuncs(blocked []string) []shell.BlockFunc {
 	}
 }
 
-func NewBashTool(permissions permission.Service, workingDir, spillDir string, attribution *config.Attribution, modelID string, maxBackgroundJobs int, perms *config.Permissions) fantasy.AgentTool {
+func NewBashTool(permissions permission.Service, workingDir, spillDir string, attribution *config.Attribution, modelID string, maxBackgroundJobs int, autoBackgroundAfter int, perms *config.Permissions) fantasy.AgentTool {
 	blocked := resolveBlockedCommands(perms)
 	userSafe := userSafeCommands(perms)
 	return fantasy.NewAgentTool(
@@ -326,12 +336,12 @@ func NewBashTool(permissions permission.Service, workingDir, spillDir string, at
 			if !check.Matched && permissions.PermissionMode() != permission.PermissionModeSysadmin {
 				blocksToUse = blockFuncs(blocked)
 			}
-			return executeBashCommand(ctx, params, execWorkingDir, spillDir, blocksToUse, maxBackgroundJobs)
+			return executeBashCommand(ctx, params, execWorkingDir, spillDir, blocksToUse, maxBackgroundJobs, autoBackgroundAfter)
 		},
 	)
 }
 
-func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, spillDir string, blockFuncsToUse []shell.BlockFunc, maxBackgroundJobs int) (fantasy.ToolResponse, error) {
+func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, spillDir string, blockFuncsToUse []shell.BlockFunc, maxBackgroundJobs, autoBackgroundAfter int) (fantasy.ToolResponse, error) {
 	// If explicitly requested as background, start immediately with detached context
 	if params.RunInBackground {
 		startTime := time.Now()
@@ -381,7 +391,7 @@ func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, 
 			Background:       true,
 			ShellID:          bgShell.ID,
 		}
-		response := fmt.Sprintf("Background shell started with ID: %s\n\nUse job_output tool to view output or job_kill to terminate.", bgShell.ID)
+		response := fmt.Sprintf("Background shell started with ID: %s\n\nUse job_output tool to view output or job_kill to terminate.%s", bgShell.ID, redirectSection(params.Command))
 		return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
 	}
 
@@ -396,8 +406,16 @@ func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, 
 	}
 
 	// Wait for either completion, auto-background threshold, or context cancellation
-	autoBackgroundAfter := cmp.Or(params.AutoBackgroundAfter, DefaultAutoBackgroundAfter)
-	autoBackgroundThreshold := time.Duration(autoBackgroundAfter) * time.Second
+	waitSeconds := cmp.Or(params.AutoBackgroundAfter, autoBackgroundAfter, DefaultAutoBackgroundAfter)
+	autoBackgroundThreshold := time.Duration(waitSeconds) * time.Second
+	// A command that writes its output to a file will never produce
+	// anything here, so the full threshold would be spent waiting for
+	// output that cannot arrive. Only the fast-failure window is worth
+	// keeping, and the log file is what the caller reads afterwards.
+	redirectedTo := redirectTarget(params.Command)
+	if redirectedTo != "" && autoBackgroundThreshold > RedirectedOutputGrace {
+		autoBackgroundThreshold = RedirectedOutputGrace
+	}
 	timer := time.NewTimer(autoBackgroundThreshold)
 	defer timer.Stop()
 
@@ -426,6 +444,10 @@ func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, 
 
 		stdout = formatOutput(stdout, stderr, execErr, spillDir)
 
+		if note := redirectNote(params.Command, bgShell.OutputWritten(), true); note != "" {
+			stdout = strings.TrimSpace(stdout + "\n\n" + note)
+		}
+
 		metadata := BashResponseMetadata{
 			StartTime:        startTime.UnixMilli(),
 			EndTime:          time.Now().UnixMilli(),
@@ -449,8 +471,127 @@ func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, 
 		Background:       true,
 		ShellID:          bgShell.ID,
 	}
-	response := fmt.Sprintf("Command is taking longer than expected and has been moved to background.\n\nBackground shell ID: %s\n\nUse job_output tool to view output or job_kill to terminate.", bgShell.ID)
+	response := fmt.Sprintf(
+		"It was still running after %s, so it has been moved to the background (last output %s ago, %s captured).\n\nBackground shell ID: %s\n\nThe command keeps running and its output keeps accumulating; job_output %s returns it whenever you need the result, and job_kill %s stops it. You are not blocked on this: carry on with the conversation, or check back when its result is what you need.%s",
+		autoBackgroundThreshold,
+		formatJobDuration(bgShell.IdleFor()),
+		formatJobBytes(bgShell.OutputWritten()),
+		bgShell.ID,
+		bgShell.ID,
+		bgShell.ID,
+		redirectSection(params.Command),
+	)
 	return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
+}
+
+// redirectTarget reports the file a command sends its output to, if it does.
+//
+// A command that redirects its output writes nothing on the streams the job
+// captures, so a perfectly busy job looks silent and a model waiting on it
+// sees "no output" forever. Naming the file is what lets it read the log
+// instead.
+//
+// Only the command's final top-level statement is considered: in a compound
+// command the earlier statements are setup (`cat > script.py <<EOF ...`, `cd`),
+// and their redirections say nothing about where the long-running command
+// writes.
+func redirectTarget(command string) string {
+	// An unparseable command yields no target: scanning its raw text would
+	// read heredoc bodies and quoted scripts as redirections.
+	return scanRedirect(lastStatementSource(command))
+}
+
+// lastStatementSource returns the source text of the final top-level statement,
+// or an empty string when the command does not parse.
+func lastStatementSource(command string) string {
+	file, err := syntax.NewParser().Parse(strings.NewReader(command), "")
+	if err != nil || len(file.Stmts) == 0 {
+		return ""
+	}
+	stmt := file.Stmts[len(file.Stmts)-1]
+	start, end := int(stmt.Pos().Offset()), int(stmt.End().Offset())
+	if start < 0 || end > len(command) || start >= end {
+		return ""
+	}
+	return command[start:end]
+}
+
+// scanRedirect walks command once, skipping quoted spans, and reads the word
+// after a `>`, `>>` or `&>` redirection. A descriptor duplicate such as `2>&1`
+// yields no target, and a redirect whose target is a descriptor yields none
+// either.
+func scanRedirect(command string) string {
+	for i := 0; i < len(command); i++ {
+		switch c := command[i]; c {
+		case '\'', '"':
+			// Skip the quoted span: a `>` inside it is text, not a redirect.
+			end := i + 1
+			for end < len(command) && command[end] != c {
+				end++
+			}
+			i = end
+		case '>':
+			// Skip the rest of the operator, then whitespace.
+			if i+1 < len(command) && command[i+1] == '>' {
+				i++
+			}
+			j := i + 1
+			for j < len(command) && (command[j] == ' ' || command[j] == '\t') {
+				j++
+			}
+			if j >= len(command) || command[j] == '&' {
+				// `>&2`, `2>&1`: a descriptor, not a file.
+				return ""
+			}
+			if q := command[j]; q == '\'' || q == '"' {
+				end := j + 1
+				for end < len(command) && command[end] != q {
+					end++
+				}
+				return command[j+1 : end]
+			}
+			end := j
+			for end < len(command) && !strings.ContainsRune(" \t;&|<>", rune(command[end])) {
+				end++
+			}
+			if end > j {
+				return command[j:end]
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+// redirectSection tells the caller where a job's output is going when its
+// command writes to a file, and that waiting on the job for output is
+// pointless. Empty for commands without a redirect.
+func redirectSection(command string) string {
+	target := redirectTarget(command)
+	if target == "" {
+		return ""
+	}
+	return fmt.Sprintf("\n\nIts output goes to %q: read that file for progress and for the result, since the job itself carries only the exit status. Check back on the file when you need the outcome; do not wait on the job for output.", target)
+}
+
+// redirectNote explains where a command's output went when nothing reached the
+// captured streams. It is empty when the command wrote nothing anywhere it
+// knows about, or when output was captured anyway.
+//
+// A running job gets "read the file instead of waiting"; a finished one gets a
+// pointer to the result the caller would otherwise think was lost.
+func redirectNote(command string, written int64, done bool) string {
+	if written > 0 {
+		return ""
+	}
+	target := redirectTarget(command)
+	if target == "" {
+		return ""
+	}
+	if done {
+		return fmt.Sprintf("This command wrote its output to %q rather than to its own streams; read that file for the result.", target)
+	}
+	return fmt.Sprintf("This command has produced no output because it redirects its output to %q; read that file instead of waiting on the job.", target)
 }
 
 // formatOutput formats the output of a completed command with error handling

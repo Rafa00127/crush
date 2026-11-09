@@ -214,6 +214,11 @@ func dispatchShebang(ctx context.Context, scriptPath string, probe []byte, args 
 	cmd.Stdin = hc.Stdin
 	cmd.Stdout = hc.Stdout
 	cmd.Stderr = hc.Stderr
+	// Bound the wait for the output pipes once the interpreter exits, for
+	// the same reason as the exec handlers: a child of the script that
+	// outlives it while holding the inherited stdout/stderr handle must
+	// not keep this command running (see https://go.dev/issue/23019).
+	cmd.WaitDelay = defaultKillTimeout
 	isolateProcess(cmd)
 
 	if err := cmd.Run(); err != nil {

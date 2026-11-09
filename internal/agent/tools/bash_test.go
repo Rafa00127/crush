@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,7 +95,7 @@ func TestBashTool_CustomAutoBackgroundThreshold(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
 	require.True(t, meta.Background)
 	require.NotEmpty(t, meta.ShellID)
-	require.Contains(t, resp.Content, "moved to background")
+	require.Contains(t, resp.Content, "moved to the background")
 
 	bgManager := shell.GetBackgroundShellManager()
 	require.NoError(t, bgManager.Kill(meta.ShellID))
@@ -149,7 +150,7 @@ func (m *recordingPermissionService) SubscribeModeChanges(ctx context.Context) <
 func newBashToolForTest(workingDir string) fantasy.AgentTool {
 	permissions := &mockBashPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
 	attribution := &config.Attribution{TrailerStyle: config.TrailerStyleNone}
-	return NewBashTool(permissions, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil)
+	return NewBashTool(permissions, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, config.DefaultAutoBackgroundAfter, nil)
 }
 
 func newBashToolWithRecordingPerms(workingDir string, allow bool) (fantasy.AgentTool, *recordingPermissionService) {
@@ -158,7 +159,7 @@ func newBashToolWithRecordingPerms(workingDir string, allow bool) (fantasy.Agent
 		allow:  allow,
 	}
 	attribution := &config.Attribution{TrailerStyle: config.TrailerStyleNone}
-	return NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil), perms
+	return NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, config.DefaultAutoBackgroundAfter, nil), perms
 }
 
 func TestBashTool_ChainedCommandsRequirePermission(t *testing.T) {
@@ -423,7 +424,7 @@ func TestBashTool_ApprovedDangerousCommandRuns(t *testing.T) {
 		mode:   permission.PermissionModeNormal,
 	}
 	attribution := &config.Attribution{TrailerStyle: config.TrailerStyleNone}
-	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil)
+	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, config.DefaultAutoBackgroundAfter, nil)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 
 	// `ifconfig` is on the default dangerous list, so it is prompted for.
@@ -454,7 +455,7 @@ func TestBashTool_UnflaggedCommandKeepsBlockList(t *testing.T) {
 		mode:   permission.PermissionModeYolo,
 	}
 	attribution := &config.Attribution{TrailerStyle: config.TrailerStyleNone}
-	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil)
+	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, config.DefaultAutoBackgroundAfter, nil)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 
 	resp := runBashTool(t, tool, ctx, BashParams{
@@ -476,7 +477,7 @@ func TestBashTool_SysadminModeSkipsBlockList(t *testing.T) {
 		mode:   permission.PermissionModeSysadmin,
 	}
 	attribution := &config.Attribution{TrailerStyle: config.TrailerStyleNone}
-	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil)
+	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, config.DefaultAutoBackgroundAfter, nil)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 
 	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "ifconfig"), []byte("#!/bin/sh\nexit 0\n"), 0o755))
@@ -499,7 +500,7 @@ func TestBashTool_DeniedDangerousCommandDoesNotRun(t *testing.T) {
 		mode:   permission.PermissionModeNormal,
 	}
 	attribution := &config.Attribution{TrailerStyle: config.TrailerStyleNone}
-	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil)
+	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, config.DefaultAutoBackgroundAfter, nil)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 
 	resp := runBashTool(t, tool, ctx, BashParams{
@@ -522,7 +523,7 @@ func TestBashTool_SafeReadOnlyPathStillEnforcesBlockList(t *testing.T) {
 		mode:   permission.PermissionModeNormal,
 	}
 	attribution := &config.Attribution{TrailerStyle: config.TrailerStyleNone}
-	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil)
+	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, config.DefaultAutoBackgroundAfter, nil)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 
 	resp := runBashTool(t, tool, ctx, BashParams{
@@ -546,7 +547,7 @@ func TestBashTool_YoloModeDoesNotPromptForDangerousCommands(t *testing.T) {
 	prompts := perms.Subscribe(t.Context())
 
 	attribution := &config.Attribution{TrailerStyle: config.TrailerStyleNone}
-	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil)
+	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, config.DefaultAutoBackgroundAfter, nil)
 	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
 
 	// `ifconfig` is on the default dangerous list. In yolo it must run
@@ -590,7 +591,7 @@ func TestBashTool_NormalModeStillPromptsForDangerousCommands(t *testing.T) {
 		mode:   permission.PermissionModeNormal,
 	}
 	attribution := &config.Attribution{TrailerStyle: config.TrailerStyleNone}
-	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil)
+	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, config.DefaultAutoBackgroundAfter, nil)
 	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
 
 	runBashTool(t, tool, ctx, BashParams{
@@ -616,7 +617,7 @@ func TestBlockedCommandErrorNamesTheCommand(t *testing.T) {
 		mode:   permission.PermissionModeYolo,
 	}
 	attribution := &config.Attribution{TrailerStyle: config.TrailerStyleNone}
-	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, nil)
+	tool := NewBashTool(perms, workingDir, workingDir, attribution, "test-model", config.DefaultMaxBackgroundJobs, config.DefaultAutoBackgroundAfter, nil)
 	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
 
 	resp := runBashTool(t, tool, ctx, BashParams{
@@ -626,4 +627,112 @@ func TestBlockedCommandErrorNamesTheCommand(t *testing.T) {
 
 	require.Contains(t, resp.Content, "ifconfig is a dangerous command",
 		"the error must name the command, not the spelling that reached it")
+}
+
+// A command that redirects its output writes nothing on the streams the job
+// captures, which used to make a busy job look dead. The auto-background reply
+// has to name the file so the caller can read it instead of waiting.
+func TestBashTool_AutoBackgroundNamesRedirectTarget(t *testing.T) {
+	tool := newBashToolForTest(t.TempDir())
+	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
+
+	target := tempRedirectTarget(t)
+	resp := runBashTool(t, tool, ctx, BashParams{
+		Description:         "redirected output",
+		Command:             fmt.Sprintf("sleep 3 > '%s' 2>&1", target),
+		AutoBackgroundAfter: 1,
+	})
+
+	require.False(t, resp.IsError)
+	var meta BashResponseMetadata
+	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
+	require.True(t, meta.Background)
+	require.Contains(t, resp.Content, "0 B captured")
+	require.Contains(t, resp.Content, fmt.Sprintf("Its output goes to %q", target))
+
+	require.NoError(t, shell.GetBackgroundShellManager().Kill(meta.ShellID))
+}
+
+// A command that writes its output to a file never produces anything on the
+// captured streams, so spending the full auto-background threshold waiting for
+// it buys nothing. It is handed to the background after the short grace, and
+// the caller is pointed at the file.
+func TestBashTool_RedirectedOutputSkipsTheFullThreshold(t *testing.T) {
+	workingDir := t.TempDir()
+	tool := newBashToolForTest(workingDir)
+	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
+
+	target := tempRedirectTarget(t)
+	start := time.Now()
+	resp := runBashTool(t, tool, ctx, BashParams{
+		Description: "redirected output, default threshold",
+		Command:     fmt.Sprintf("sleep 10 > '%s' 2>&1", target),
+	})
+	elapsed := time.Since(start)
+
+	require.Less(t, elapsed, 15*time.Second,
+		"a redirected command must not wait out the 60s default threshold")
+
+	var meta BashResponseMetadata
+	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
+	require.True(t, meta.Background)
+	require.Contains(t, resp.Content, fmt.Sprintf("Its output goes to %q", target))
+	require.Contains(t, resp.Content, "read that file for progress")
+
+	require.NoError(t, shell.GetBackgroundShellManager().Kill(meta.ShellID))
+}
+
+// A redirected command that finishes inside the grace returns synchronously,
+// with its (otherwise empty) output explained.
+func TestBashTool_FinishedRedirectNamesTheFile(t *testing.T) {
+	workingDir := t.TempDir()
+	tool := newBashToolForTest(workingDir)
+	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
+
+	resp := runBashTool(t, tool, ctx, BashParams{
+		Description: "quiet success",
+		Command:     "echo hi > out.log",
+	})
+
+	require.False(t, resp.IsError)
+	var meta BashResponseMetadata
+	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
+	require.False(t, meta.Background)
+	require.Contains(t, resp.Content, "wrote its output to \"out.log\"")
+}
+
+// tempRedirectTarget returns a log path outside the test's TempDir: a command
+// killed mid-run still holds its output file open for a moment, and Windows
+// refuses to remove a directory holding an open file.
+func tempRedirectTarget(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(os.TempDir(), fmt.Sprintf("crush-redirect-%d.log", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(path) })
+	return path
+}
+
+// Regression: in a compound command the earlier statements are setup, and their
+// redirections say nothing about where the running command writes. Reading them
+// as "output is redirected" shortened the wait to the redirect grace, so a
+// long command was handed off after 2s instead of the configured threshold.
+func TestBashTool_SetupRedirectDoesNotShortenTheWait(t *testing.T) {
+	t.Parallel()
+
+	tool := newBashToolForTest(t.TempDir())
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+
+	target := tempRedirectTarget(t)
+	start := time.Now()
+	resp := runBashTool(t, tool, ctx, BashParams{
+		Description: "setup redirect, real output on stdout",
+		Command:     fmt.Sprintf("echo setup > '%s'; sleep 5", target),
+	})
+	elapsed := time.Since(start)
+
+	require.Greater(t, elapsed, RedirectedOutputGrace+time.Second,
+		"the redirect on an earlier statement must not shorten the wait")
+
+	var meta BashResponseMetadata
+	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
+	require.False(t, meta.Background, "a command that finishes within the threshold stays synchronous")
 }

@@ -32,8 +32,11 @@ Common shell builtins and core utils available on Windows.
 - Backgrounding buys you the time the command takes, so spend it: start the job, then keep working
 - Do NOT call job_output right after starting a job. It returns the output so far, and a job that just started has printed nothing
 - Call job_output once the job's result is the next thing you need, or once you have run out of other work
-- job_output with wait=true blocks until the job finishes, giving back the time you just bought; only wait when waiting is the useful thing to do
-- A command that auto-backgrounds on the timeout behaves the same way: it is still running, so keep working unless you need its result now
+- job_output with wait=true blocks until the job finishes, giving back the time you just bought; only wait when waiting is the useful thing to do, because nothing reaches you until it returns
+- Before starting another long command, call job_output with no shell_id to list every job: a previous run that is still going keeps its resources (GPU memory, a port, a lock file) and will fight the new one
+- A command that redirects its output (`> out.log 2>&1`) writes nothing into the job, so its output stays empty however busy it is. Such a command is backgrounded almost immediately instead of waiting out the threshold: read the log file for progress and for the result, and go back to it when you need the outcome rather than polling the job
+- Its first line reports elapsed time, how long since the last output, and bytes captured. A running job whose "last output" keeps growing while its captured bytes stay the same is producing nothing: it is slow, blocked on a lock, or waiting on input. Tell the user that and offer to read it again later or to kill it, instead of waiting silently
+- A command that outlives the auto-background wait is handed back to you as a job: Crush tells you so, keeps its output, and frees the turn. That is not a failure and not a reason to stop: carry on with the conversation (or with other work) and call job_output when its result is what you need
 - Use job_kill tool to terminate a background shell
 - IMPORTANT: NEVER use `&` at the end of commands to run in background - use run_in_background parameter instead
 - Commands that should run in background:

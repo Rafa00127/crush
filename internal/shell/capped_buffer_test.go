@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"bytes"
 	"runtime"
 	"strings"
 	"sync"
@@ -113,4 +114,29 @@ func TestBackgroundShellOutputStaysBounded(t *testing.T) {
 	stdout, _, done, _ := bg.GetOutput()
 	require.False(t, done)
 	require.Less(t, len(stdout), maxKeptOutput+64)
+}
+
+func TestCappedBufferTracksActivity(t *testing.T) {
+	t.Parallel()
+	b := newCappedBuffer(64)
+	require.Equal(t, int64(0), b.Written())
+	require.True(t, b.LastWrite().IsZero())
+
+	b.Write([]byte("hello"))
+	first := b.LastWrite()
+	require.Equal(t, int64(5), b.Written())
+	require.False(t, first.IsZero())
+
+	time.Sleep(3 * time.Millisecond)
+	b.Write([]byte(" world"))
+	require.Equal(t, int64(11), b.Written())
+	require.True(t, b.LastWrite().After(first), "a write must move the activity clock forward")
+}
+
+func TestCappedBufferWrittenCountsDroppedBytes(t *testing.T) {
+	t.Parallel()
+	b := newCappedBuffer(8)
+	b.Write(bytes.Repeat([]byte("x"), 100))
+	require.Equal(t, int64(100), b.Written(), "dropped bytes still count as produced output")
+	require.Less(t, len(b.String()), 100)
 }

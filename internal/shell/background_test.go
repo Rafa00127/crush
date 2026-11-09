@@ -332,9 +332,9 @@ func TestBackgroundShell_WaitContext_Canceled(t *testing.T) {
 
 const testMaxJobs = 50
 
-// track registers a fake job with the manager. When completedAt is zero the
-// job counts as still running.
-func track(m *BackgroundShellManager, id string, completedAt int64) {
+// track registers a fake job with the manager. A zero completedAt means the job
+// counts as still running.
+func track(m *BackgroundShellManager, id string, completedAt time.Time) {
 	bgShell := &BackgroundShell{
 		ID:     id,
 		done:   make(chan struct{}),
@@ -342,8 +342,8 @@ func track(m *BackgroundShellManager, id string, completedAt int64) {
 		stderr: newCappedBuffer(maxKeptOutput),
 		cancel: func() {},
 	}
-	if completedAt > 0 {
-		bgShell.completedAt.Store(completedAt)
+	if !completedAt.IsZero() {
+		bgShell.completedAt.Store(completedAt.UnixNano())
 		close(bgShell.done)
 	}
 	m.shells[id] = bgShell
@@ -354,7 +354,7 @@ func TestBackgroundShellManager_FinishedJobsDoNotBlockStart(t *testing.T) {
 
 	manager := newBackgroundShellManager()
 	for i := range testMaxJobs {
-		track(manager, fmt.Sprintf("done-%d", i), time.Now().Unix())
+		track(manager, fmt.Sprintf("done-%d", i), time.Now())
 	}
 
 	bgShell, err := manager.Start(t.Context(), t.TempDir(), nil, "echo hi", "", testMaxJobs)
@@ -367,8 +367,8 @@ func TestBackgroundShellManager_RunningJobsBlockStart(t *testing.T) {
 	t.Parallel()
 
 	manager := newBackgroundShellManager()
-	track(manager, "running-0", 0)
-	track(manager, "running-1", 0)
+	track(manager, "running-0", time.Time{})
+	track(manager, "running-1", time.Time{})
 
 	_, err := manager.Start(t.Context(), t.TempDir(), nil, "echo hi", "", 2)
 	require.ErrorContains(t, err, "maximum number of running background jobs (2)")
@@ -384,8 +384,8 @@ func TestBackgroundShellManager_DropsStaleFinishedJobs(t *testing.T) {
 
 	manager := newBackgroundShellManager()
 	now := time.Now()
-	track(manager, "stale", now.Add(-CompletedJobRetention).Unix()-1)
-	track(manager, "fresh", now.Unix())
+	track(manager, "stale", now.Add(-CompletedJobRetention).Add(-time.Second))
+	track(manager, "fresh", now)
 
 	bgShell, err := manager.Start(t.Context(), t.TempDir(), nil, "echo hi", "", testMaxJobs)
 	require.NoError(t, err)
@@ -401,11 +401,11 @@ func TestBackgroundShellManager_PruneDropsOldestFinished(t *testing.T) {
 	t.Parallel()
 
 	manager := newBackgroundShellManager()
-	now := time.Now().Unix()
+	now := time.Now()
 	for i := range MaxFinishedJobs + 1 {
-		track(manager, fmt.Sprintf("done-%d", i), now+int64(i))
+		track(manager, fmt.Sprintf("done-%d", i), now.Add(time.Duration(i)*time.Second))
 	}
-	track(manager, "running", 0)
+	track(manager, "running", time.Time{})
 
 	bgShell, err := manager.Start(t.Context(), t.TempDir(), nil, "sleep 1", "", testMaxJobs)
 	require.NoError(t, err)
@@ -419,4 +419,45 @@ func TestBackgroundShellManager_PruneDropsOldestFinished(t *testing.T) {
 	require.True(t, ok, "running jobs must never be dropped")
 
 	require.NoError(t, manager.Kill(bgShell.ID))
+}
+
+func TestBackgroundShellActivity(t *testing.T) {
+	t.Parallel()
+
+	bs := &BackgroundShell{
+		stdout:    newCappedBuffer(64),
+		stderr:    newCappedBuffer(64),
+		done:      make(chan struct{}),
+		startedAt: time.Now().Add(-3 * time.Second),
+	}
+
+	require.InDelta(t, 3.0, bs.Elapsed().Seconds(), 0.5)
+	require.InDelta(t, 3.0, bs.IdleFor().Seconds(), 0.5,
+		"a job that has produced nothing is idle since it started")
+	require.Equal(t, int64(0), bs.OutputWritten())
+
+	bs.stdout.Write([]byte("abc"))
+	require.InDelta(t, 0, bs.IdleFor().Seconds(), 0.5, "writing resets the idle clock")
+	require.Equal(t, int64(3), bs.OutputWritten())
+
+	bs.completedAt.Store(time.Now().Add(-time.Second).UnixNano())
+	require.InDelta(t, 2.0, bs.Elapsed().Seconds(), 0.5,
+		"a finished job reports how long it ran, not how long ago it started")
+}
+
+// A shell that will not stop must not block the caller: job_kill and the
+// agent's own cancel path both wait here, so a hang would freeze the turn.
+func TestBackgroundShellManager_KillTimeout(t *testing.T) {
+	t.Parallel()
+
+	manager := newBackgroundShellManager()
+	track(manager, "wedged", time.Time{})
+
+	start := time.Now()
+	err := manager.killWithin("wedged", 50*time.Millisecond)
+	require.ErrorContains(t, err, "did not stop within")
+	require.Less(t, time.Since(start), time.Second, "Kill must give up on its own")
+
+	_, ok := manager.Get("wedged")
+	require.True(t, ok, "a shell that outlived the kill stays reachable for a retry")
 }

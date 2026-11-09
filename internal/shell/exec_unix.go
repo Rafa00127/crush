@@ -5,7 +5,6 @@ package shell
 import (
 	"context"
 	"fmt"
-	"io"
 	"os/exec"
 	"syscall"
 	"time"
@@ -38,9 +37,11 @@ func isolateProcess(cmd *exec.Cmd) {
 // framework files will attempt to take over the TTY, causing SIGTTIN/SIGTTOU
 // signals and corrupting the parent terminal state.
 //
-// The implementation mirrors interp.DefaultExecHandler with two additions:
-// isolateProcess(&cmd) after construction, and negative-PID signal targeting
-// in the cancellation callback so the entire child process group is killed.
+// The implementation mirrors interp.DefaultExecHandler with three additions:
+// isolateProcess(&cmd) after construction, negative-PID signal targeting in
+// the cancellation callback so the entire child process group is killed, and
+// a WaitDelay so an orphaned child holding the output pipe cannot keep the
+// command waiting after it exited.
 func processGroupExecHandler(killTimeout time.Duration) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
 		hc := interp.HandlerCtx(ctx)
@@ -59,6 +60,12 @@ func processGroupExecHandler(killTimeout time.Duration) interp.ExecHandlerFunc {
 			Stdout: hc.Stdout,
 			Stderr: hc.Stderr,
 		}
+		// Bound the wait for the output pipes once the process itself is
+		// done. Without this, a grandchild that inherited stdout or
+		// stderr keeps cmd.Wait blocked long after the command exited, so
+		// a finished command looks like it is still running (see
+		// https://go.dev/issue/23019).
+		cmd.WaitDelay = killTimeout
 		isolateProcess(&cmd)
 
 		err = cmd.Start()
@@ -80,29 +87,5 @@ func processGroupExecHandler(killTimeout time.Duration) interp.ExecHandlerFunc {
 		}
 
 		return exitStatusFromError(ctx, hc.Stderr, err)
-	}
-}
-
-// exitStatusFromError translates an exec error into an interp exit status,
-// matching the conventions of interp.DefaultExecHandler. Extracted so the
-// platform-specific exec handler stays focused on isolation mechanics.
-func exitStatusFromError(ctx context.Context, stderr io.Writer, err error) error {
-	if err == nil {
-		return nil
-	}
-	switch err := err.(type) {
-	case *exec.ExitError:
-		if status, ok := err.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return interp.ExitStatus(128 + uint8(status.Signal()))
-		}
-		return interp.ExitStatus(uint8(err.ExitCode()))
-	case *exec.Error:
-		fmt.Fprintf(stderr, "%v\n", err)
-		return interp.ExitStatus(127)
-	default:
-		return err
 	}
 }

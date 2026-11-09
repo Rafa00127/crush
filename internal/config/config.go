@@ -478,6 +478,10 @@ type Options struct {
 	DisabledSkills            []string     `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=crush-config"`
 	RequestTimeout            *int         `json:"request_timeout,omitempty" jsonschema:"description=Timeout in seconds for each LLM API request. Streaming responses are aborted only after this much inactivity between tokens\\, so slow but active streams are never killed; the wait for the first token gets at least five minutes for prompt prefill. 0 disables it\\, negative values are invalid.,default=60,example=120,example=300,example=0"`
 	MaxBackgroundJobs         *int         `json:"max_background_jobs,omitempty" jsonschema:"description=How many background shell jobs may run at once. Jobs that have finished never count against it. 0 or negative restores the default.,default=50,example=10,example=200"`
+	// AutoBackgroundAfter is how long the bash tool waits for a command
+	// before handing it to the background and freeing the turn. The command
+	// keeps running and its output stays readable with job_output.
+	AutoBackgroundAfter *int `json:"auto_background_after,omitempty" jsonschema:"description=Seconds the bash tool waits for a command before moving it to the background and freeing the turn. The command keeps running and job_output still reads its output. 0 or negative restores the default.,default=15,example=5,example=60"`
 	// PinentryIntegrated renders GPG passphrase/PIN prompts as a native
 	// Crush dialog (loopback pinentry) instead of handing the terminal
 	// over to an external pinentry program. No GPG or git configuration
@@ -614,6 +618,21 @@ func (o *Options) GetMaxBackgroundJobs() int {
 		return DefaultMaxBackgroundJobs
 	}
 	return *o.MaxBackgroundJobs
+}
+
+// DefaultAutoBackgroundAfter is how long the bash tool waits for a command
+// before handing it to the background, when auto_background_after is unset.
+// Short enough that a slow command frees the conversation quickly, long enough
+// that ordinary commands still return their output in the same turn.
+const DefaultAutoBackgroundAfter = 15
+
+// GetAutoBackgroundAfter returns the wait before a running command is moved to
+// the background, always positive.
+func (o *Options) GetAutoBackgroundAfter() int {
+	if o == nil || o.AutoBackgroundAfter == nil || *o.AutoBackgroundAfter <= 0 {
+		return DefaultAutoBackgroundAfter
+	}
+	return *o.AutoBackgroundAfter
 }
 
 // DefaultRequestTimeout bounds each LLM API request when the user has not

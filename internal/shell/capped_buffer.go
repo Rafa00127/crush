@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 )
 
@@ -21,6 +22,11 @@ type cappedBuffer struct {
 	ring    []byte // The latest bytes past the head, oldest at next once full.
 	next    int
 	dropped int64
+	// written counts every byte ever passed to Write, including those
+	// dropped from the buffer, so callers can tell "still producing
+	// output" from "silent" without reading the content.
+	written   int64
+	lastWrite time.Time
 }
 
 func newCappedBuffer(limit int) *cappedBuffer {
@@ -31,6 +37,10 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	n := len(p)
+	if n > 0 {
+		b.written += int64(n)
+		b.lastWrite = time.Now()
+	}
 	take := min(b.half-len(b.head), len(p))
 	b.head = append(b.head, p[:take]...)
 	p = p[take:]
@@ -49,6 +59,22 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 		p = p[c:]
 	}
 	return n, nil
+}
+
+// Written reports how many bytes the stream has produced in total, including
+// bytes dropped from the retained window.
+func (b *cappedBuffer) Written() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.written
+}
+
+// LastWrite reports when the stream last received bytes, or the zero time if it
+// never has.
+func (b *cappedBuffer) LastWrite() time.Time {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.lastWrite
 }
 
 func (b *cappedBuffer) String() string {
