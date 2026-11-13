@@ -72,6 +72,11 @@ git status --short && git diff --stat        # 在途改动
 对"起服务器/守护进程"这类用法这是**正确**的；对一次性脚本就是残留。Crush 看不到它们
 （作业表里没有），只能靠外部检查（`Get-CimInstance Win32_Process`、端口占用）。
 
+可能待办（低优先）：在退出告别屏加一行 `N background job(s) still running; their child
+processes may outlive Crush`，只在有 running 作业时显示。**只做提示、不做进程树强杀**
+——强杀会误伤正当用法：例如"帮我把游戏/服务拉起来"，玩的时候顺手关了 Crush，游戏不该
+被连带杀掉。
+
 ---
 
 ## 2. 已提交的改动（19 个提交，按主题）
