@@ -502,3 +502,28 @@ func TestBackgroundShellManager_NotifiesOnlyBackgroundedJobs(t *testing.T) {
 	require.False(t, syncJob.WasBackgrounded())
 	require.Equal(t, 0, bgJob.ExitStatus())
 }
+
+// Killing a job is not news: the caller asked for it, and its output is gone,
+// so no completion notification may follow.
+func TestBackgroundShellManager_KilledJobDoesNotNotify(t *testing.T) {
+	t.Parallel()
+
+	manager := newBackgroundShellManager()
+	var mu sync.Mutex
+	notified := 0
+	manager.SetCompletionHandler(func(*BackgroundShell) {
+		mu.Lock()
+		notified++
+		mu.Unlock()
+	})
+
+	job, err := manager.Start(t.Context(), t.TempDir(), nil, "sleep 20", "", testMaxJobs)
+	require.NoError(t, err)
+	job.MarkBackgrounded()
+
+	require.NoError(t, manager.Kill(job.ID))
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Zero(t, notified, "a killed job must not announce that it finished")
+}

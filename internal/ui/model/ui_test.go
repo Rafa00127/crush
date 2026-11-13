@@ -1004,7 +1004,7 @@ func TestSendJobNoticeText_PromptsTheAgent(t *testing.T) {
 
 	require.Len(t, ws.runPrompts, 1)
 	require.Contains(t, ws.runPrompts[0], "Job 00A finished (exit 0)")
-	require.Contains(t, ws.runPrompts[0], "job_output 00A", "a job that cannot be found still names how to read it")
+	require.Contains(t, ws.runPrompts[0], "the job is no longer available", "a missing job says so instead of pointing at nothing")
 	require.True(t, ws.runHidden[0], "the user did not type this, so it must not be echoed as their message")
 }
 
@@ -1062,7 +1062,7 @@ func TestJobFinished_AutoConfirmedInYoloMode(t *testing.T) {
 	drainCmds(cmd)
 
 	require.Len(t, ws.runPrompts, 1)
-	require.Contains(t, ws.runPrompts[0], "job_output 00A")
+	require.Contains(t, ws.runPrompts[0], "the job is no longer available")
 	require.False(t, u.dialog.ContainsDialog(dialog.JobNoticeID), "yolo mode opens no dialog")
 }
 

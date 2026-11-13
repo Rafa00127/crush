@@ -5444,9 +5444,9 @@ func jobNoticePrompt(jobID, message string) string {
 	}
 	bgShell, ok := shell.GetBackgroundShellManager().Get(jobID)
 	if !ok {
-		// Pruned, or owned by another process: fall back to the summary
-		// and let the agent fetch it.
-		return fmt.Sprintf("%s — read its output with job_output %s.", strings.TrimSuffix(message, "."), jobID)
+		// Stopped, pruned, or owned by another process: say so instead of
+		// pointing at an output that is no longer there.
+		return fmt.Sprintf("%s — the job is no longer available, so its output cannot be read.", strings.TrimSuffix(message, "."))
 	}
 
 	subject := strings.TrimSpace(bgShell.Description)

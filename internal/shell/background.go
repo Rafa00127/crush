@@ -43,6 +43,9 @@ type BackgroundShell struct {
 	// background job rather than returned synchronously. Only those jobs
 	// notify anyone when they finish.
 	backgrounded atomic.Bool
+	// cancelled records that the job was stopped on purpose. Killing a job
+	// is not news: the caller asked for it, and its output is gone.
+	cancelled atomic.Bool
 }
 
 // BackgroundShellManager manages background shell instances.
@@ -116,7 +119,7 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 		bgShell.exitErr = err
 		bgShell.completedAt.Store(time.Now().UnixNano())
 
-		if bgShell.backgrounded.Load() {
+		if bgShell.backgrounded.Load() && !bgShell.cancelled.Load() {
 			if fn := m.completionHandler(); fn != nil {
 				fn(bgShell)
 			}
@@ -198,6 +201,7 @@ func (m *BackgroundShellManager) killWithin(id string, wait time.Duration) error
 	if err != nil {
 		return err
 	}
+	shell.cancelled.Store(true)
 	shell.cancel()
 	select {
 	case <-shell.done:
@@ -235,6 +239,7 @@ func (m *BackgroundShellManager) KillAll(ctx context.Context) {
 	var wg sync.WaitGroup
 	for _, shell := range shells {
 		wg.Go(func() {
+			shell.cancelled.Store(true)
 			shell.cancel()
 			select {
 			case <-shell.done:
