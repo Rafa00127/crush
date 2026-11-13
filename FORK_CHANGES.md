@@ -159,3 +159,97 @@ go test ./internal/shell/ ./internal/agent/tools/ ./internal/config/ ./internal/
 - 新增配置项一律走 `option` 名字表 + `Options` 字段 + `schema.json` 三处，缺一处就
   在 release 后暴露成"配置不生效"。
 - 未提交的在途改动同步上游前要先落成提交，否则 stash/merge 会把两批改动混在一起。
+
+## 5. 上游同步计划（2026-11-14 待做）
+
+**目标**：把 `origin/main`（`dd40fd9`，105 个提交，已打 `v0.100.0` / `v0.101.0`）
+合进 `local/dshlike`。工作区当前干净，可以先动。
+
+### 5.1 上游这轮改了什么（先读，别猜）
+
+- **主线：子代理（sub-agents）** —— `internal/agent` +6,253、`internal/ui` +4,073：
+  detached 派发、中途发消息、命名与配色、transcript/侧边栏/退出对话框里的进度、模型覆盖、
+  报告作为独立 message part。
+- 其它 feature：`pipe question tools`、`skill toggle`、`CRUSH_DATA_DIR`、
+  消息持久化模型显示名、**工具调用耗时显示**（只改 UI：`ui/chat/tools.go`、`ui/common/timer.go`）。
+- 值得盯的 fix：`fix(permissions): make yolo mode block dangerous commands without asking`
+  （动 `bash.go`，与本地 yolo/sysadmin 语义正面相撞）、
+  `fix(agent): stop a cancelled or silent stream instead of hanging the turn`、
+  `fix: crush run should not spawn a server if none is running`、
+  `fix(ui): preserve CRLF lines in bang mode output`。
+
+### 5.2 冲突面（按 merge-base 行级重叠算出来的）
+
+我们动过 88 个文件，其中 **58 个上游没碰**；双方都动的 30 个里，真重叠的只有这 6 个：
+
+| 重叠 hunk | 文件 | 备注 |
+|---|---|---|
+| 6 | `internal/agent/prompt/prompt.go` | 提示词拼装 |
+| 6 | `internal/agent/coordinator.go` | 上游 53 处（子代理），最痛 |
+| 3 | `internal/agent/tools/bash_test.go` | 测试 |
+| 3 | `internal/agent/agentic_fetch_tool.go` | fetch 子代理 |
+| 3 | `internal/agent/plan_prompt_test.go` | 测试 |
+| 2 | `internal/agent/agent.go` | 上游 65 处（子代理），最痛 |
+
+各 1 处、基本是相邻样式改动的：`tools/web_search.go`、`tools/bash.md.tpl`、
+`templates/agent_tool.md`、`templates/plan.md.tpl`、`tools/web_fetch.md.tpl`、`.gitignore`。
+
+**零重叠（可自动合）的自家重点**：`internal/shell/*`（上游未动）、
+`internal/agent/tools/bash.go`（我们 22 处 vs 上游 5 处，行不重叠）、
+`internal/agent/tools/job_output.go`、`internal/ui/model/ui.go`（8 vs 31）、
+`internal/config/config.go`（8 vs 6）、`internal/agent/notify`、`internal/ui/dialog/*`。
+
+### 5.3 执行顺序
+
+```bash
+cd D:/ProgrammingStuff/Crush/my_fork
+git status                       # 必须干净
+git branch backup/pre-sync-20261114
+git fetch origin
+git log --oneline HEAD..origin/main | wc -l      # 应为 105
+git merge origin/main            # 用 merge，保留分叉历史
+```
+
+解冲突顺序（从易到难，别一上来啃 agent.go）：
+
+1. 各 1 处的琐碎文件（`*.md.tpl`、`.gitignore`、`web_search.go`）——取上游 + 保留本地文案。
+2. `bash_test.go` / `plan_prompt_test.go`——两边都是测试，合并用例即可。
+3. `agentic_fetch_tool.go`——上游把 fetch 改成子代理；保留本地"provider 侧 web search"路径。
+4. `tools/bash.go`——**语义冲突，逐个读**：上游让 yolo 下危险命令仍然被拦，本地有
+   yolo/sysadmin 模式与可配置危险命令列表（`blocked_commands`）。原则上取上游的拦截时机，
+   叠加本地的 sysadmin 豁免与配置项；`auto_background_after`、重定向检测、交棒文案必须保留。
+5. `prompt.go` → `coordinator.go` → `agent.go`——上游子代理重构的核心。合并时保住：
+   本地新增的上下文/提示词段落、`tools.NewBashTool` 多出的 `autoBackgroundAfter` 参数、
+   `notify.TypeJobFinished` 的发布点。
+
+### 5.4 合并后必须验证
+
+```bash
+go build ./...
+go vet ./internal/...
+go test ./internal/shell/ ./internal/agent/tools/ ./internal/config/ ./internal/shellconfig/ \
+        ./internal/ui/... ./internal/app/
+```
+
+已知会失败（与改动无关，`bash` 指向 WSL）：`TestDispatch_BashShebang`、
+`TestDispatch_ShebangPassesExitCode`。
+
+**功能冒烟**（用本文档的编译部署流程，或直接跑 `crush-dshlike.exe`）：
+
+1. `python -c "import time; time.sleep(30); print('睡好了')"` → 15s 交棒（或配置值），
+   期间能插话；完成弹 `Background Job Finished`，Enter 后拿到带输出的消息（normal）；
+   yolo 下自动送达且不进聊天记录。
+2. 重定向命令（`... > out.log 2>&1`）→ 2s 交棒，回包点名日志文件。
+3. `job_output` 不带 `shell_id` → 列出作业；带 `wait` → 参数被忽略、立即返回。
+4. 中文输出（WSL/编码）仍正常：`python -c "print('中文测试')"`。
+5. 若上游的"工具调用耗时"与本地作业状态行在 UI 上重复，二选一或合并显示。
+
+### 5.5 回滚
+
+```bash
+git merge --abort          # 还没提交时
+git reset --hard backup/pre-sync-20261114
+```
+
+出问题的判定标准：`go build ./...` 不过、或第 5.4 的冒烟有任意一条不满足，先回滚再重来，
+不要在坏状态上继续叠改动。
