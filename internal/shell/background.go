@@ -39,12 +39,19 @@ type BackgroundShell struct {
 	exitErr     error
 	startedAt   time.Time
 	completedAt atomic.Int64 // Unix nanoseconds when the job completed (0 if still running)
+	// backgrounded records that the job was handed to the caller as a
+	// background job rather than returned synchronously. Only those jobs
+	// notify anyone when they finish.
+	backgrounded atomic.Bool
 }
 
 // BackgroundShellManager manages background shell instances.
 type BackgroundShellManager struct {
 	mu     sync.Mutex
 	shells map[string]*BackgroundShell
+	// onComplete runs when a backgrounded job finishes, so the UI can tell
+	// the user. Nil when nobody is listening.
+	onComplete func(*BackgroundShell)
 }
 
 var (
@@ -108,6 +115,12 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 
 		bgShell.exitErr = err
 		bgShell.completedAt.Store(time.Now().UnixNano())
+
+		if bgShell.backgrounded.Load() {
+			if fn := m.completionHandler(); fn != nil {
+				fn(bgShell)
+			}
+		}
 	}()
 
 	return bgShell, nil
@@ -269,6 +282,42 @@ func (bs *BackgroundShell) WaitContext(ctx context.Context) bool {
 	case <-ctx.Done():
 		return false
 	}
+}
+
+// SetCompletionHandler registers fn to run when a backgrounded job finishes.
+// Replacing the handler at runtime is allowed; the manager serializes access.
+func (m *BackgroundShellManager) SetCompletionHandler(fn func(*BackgroundShell)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onComplete = fn
+}
+
+// completionHandler returns the current completion handler.
+func (m *BackgroundShellManager) completionHandler() func(*BackgroundShell) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.onComplete
+}
+
+// MarkBackgrounded records that the job was handed to the caller as a
+// background job. Only such jobs notify anyone when they finish: a command
+// that returned synchronously already delivered its result.
+func (bs *BackgroundShell) MarkBackgrounded() {
+	bs.backgrounded.Store(true)
+}
+
+// WasBackgrounded reports whether the job was handed to the caller as a
+// background job.
+func (bs *BackgroundShell) WasBackgrounded() bool {
+	return bs.backgrounded.Load()
+}
+
+// ExitStatus reports the job's exit code, or -1 while it is still running.
+func (bs *BackgroundShell) ExitStatus() int {
+	if bs.completedAt.Load() == 0 {
+		return -1
+	}
+	return ExitCode(bs.exitErr)
 }
 
 // Elapsed reports how long the job has been running, or how long it ran before

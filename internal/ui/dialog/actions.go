@@ -24,6 +24,12 @@ import (
 // ActionClose is a message to close the current dialog.
 type ActionClose struct{}
 
+// ActionTellAboutJob asks the agent to read a finished background job.
+type ActionTellAboutJob struct {
+	JobID   string
+	Message string
+}
+
 // ActionQuit is a message to quit the application.
 type ActionQuit = tea.QuitMsg
 

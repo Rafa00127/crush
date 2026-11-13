@@ -22,7 +22,6 @@ var jobOutputDescription string
 
 type JobOutputParams struct {
 	ShellID string `json:"shell_id,omitempty" description:"The ID of the background shell to retrieve output from. Omit it to list every job and its state"`
-	Wait    bool   `json:"wait,omitempty" description:"If true, block until the background shell completes before returning output"`
 }
 
 type JobOutputResponseMetadata struct {
@@ -153,10 +152,6 @@ func NewJobOutputTool(spillDir string) fantasy.AgentTool {
 			bgShell, ok := bgManager.Get(params.ShellID)
 			if !ok {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("background shell not found: %s", params.ShellID)), nil
-			}
-
-			if params.Wait {
-				bgShell.WaitContext(ctx)
 			}
 
 			stdout, stderr, done, err := bgShell.GetOutput()

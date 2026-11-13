@@ -113,3 +113,25 @@ func TestJobOutputNamesRedirectTarget(t *testing.T) {
 	require.Contains(t, resp.Content, "Status: running")
 	require.Contains(t, resp.Content, "redirects its output to \"out.log\"")
 }
+
+// job_output never blocks, whatever is asking: a background job must not be
+// able to hold the turn open.
+func TestJobOutputDoesNotBlockOnRunningJob(t *testing.T) {
+	t.Parallel()
+
+	manager := shell.GetBackgroundShellManager()
+	bgShell, err := manager.Start(t.Context(), t.TempDir(), nil, "sleep 20", "", testMaxJobs)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = manager.Kill(bgShell.ID) })
+
+	tool := NewJobOutputTool(t.TempDir())
+	start := time.Now()
+	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
+		ID:    "call_3",
+		Name:  JobOutputToolName,
+		Input: fmt.Sprintf(`{"shell_id":%q}`, bgShell.ID),
+	})
+	require.NoError(t, err)
+	require.Less(t, time.Since(start), 5*time.Second, "reading a running job must return at once")
+	require.Contains(t, resp.Content, "Status: running")
+}

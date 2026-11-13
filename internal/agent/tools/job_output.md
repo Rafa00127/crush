@@ -1,4 +1,4 @@
-Get stdout/stderr from a background shell by ID; returns whatever the job has printed so far. Call it when you need the job's result, not right after starting the job, and set wait=true only when blocking until the job finishes is what you want.
+Get stdout/stderr from a background shell by ID; returns whatever the job has printed so far. Call it when you need the job's result, not right after starting the job. There is no wait option: a background job never blocks you, so read it again later instead of waiting on it.
 
 Omit shell_id to list every tracked job with its state. Use that before starting another long command: a previous run that is still going keeps its resources (a GPU, a port, a lock file) and will fight the new one.
 

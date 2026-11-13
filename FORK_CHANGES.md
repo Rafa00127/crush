@@ -32,13 +32,18 @@ git status --short && git diff --stat        # 在途改动
 | 作业活性数据 | `internal/shell/capped_buffer.go`、`background.go` | 记 `startedAt` / `lastOutputAt` / 累计字节，`Elapsed()`、`IdleFor()`、`OutputWritten()` |
 | `job_output` 状态行 | `internal/agent/tools/job_output.go` | `running (elapsed 3m2s, last output 58s ago, 1.2 KB captured)`，把"卡住"和"慢"分开 |
 | `job_output` 作业盘点 | 同上 | 省略 `shell_id` 时列出所有作业（running 优先），取代手写 PowerShell 查进程 |
+| `job_output` 取消等待 | 同上 | 删掉 `wait` 参数：作业永远不阻塞模型，否则一个 `wait=true` 就能把整轮对话挂住（排队消息要等 step 边界才能折叠进当前轮） |
+| 作业完成提示 | `internal/shell/background.go`、`internal/agent/notify`、`internal/app/app.go`、`internal/ui/model/ui.go` | 只有**真正被交棒**的作业在结束时发一条 `notify.TypeJobFinished`；同步返回的作业不打扰。只用 TUI 提示，不发系统通知 |
+| 作业完成弹框 | `internal/ui/dialog/job_notice.go`（新）、`internal/ui/model/ui.go` | 与 **Permission required 同一套外壳**（`Styles.Dialog.View` + 渐变标题 + 两个按钮）：`Tell Crush` / `Dismiss`，`enter` 确认、`←/→`/`tab` 切换、`y`/`n` 快捷；不再用状态栏那行字 |
+| 转交时直接带输出 | `internal/ui/model/ui.go` | 确认后发出的是一条 **hidden user 消息**（用户没打字，不能当成他的话回声）且自带结果：`This is the result of background job 00A, which you started earlier … Its output: <…>`，模型不需要再调 `job_output`；超长保留头尾（8000 字符）并提示可再读 |
+| yolo 自动转交 | 同上 | yolo/sysadmin 不弹框、自动把同一条带输出的消息发给模型，行为与加提示之前一致 |
 | 重定向输出检测 | `internal/agent/tools/bash.go` | 命令写日志文件时作业永远是 `no output`；用 mvdan 解析器只看**最后一条顶层语句**的重定向，并点名日志文件 |
 | 重定向命令 2s 交棒 | 同上（`RedirectedOutputGrace`） | 输出不可能到达我们这边，等满阈值没有意义 |
 | 默认交棒阈值 60s → 15s | 同上 + `internal/config/config.go` + `internal/shellconfig/options.go` | 让对话尽早空出来；新增 `option auto-background-after N` / `options.auto_background_after` |
 | 交棒文案 | `bash.go`、`bash.md.tpl`、`job_output.md` | 明确告诉模型"已转后台、输出还在、你可以继续聊"，并说明如何回头看结果 |
 
-尚未做：`job_output(wait=true)` 仍无上限（只能 ESC 中断）；Windows 侧没有 Job
-Object，`job_kill` 杀不到孙进程；跨会话的进程盘点也还看不到 Crush 之外的残留。
+尚未做：Windows 侧没有 Job Object，`job_kill` 杀不到孙进程；看不到 Crush 之外的
+残留进程；作业结果只在内存里（重启即丢）。
 
 ---
 

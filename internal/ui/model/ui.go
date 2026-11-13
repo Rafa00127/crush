@@ -47,6 +47,7 @@ import (
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/question"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/shell"
 	"github.com/charmbracelet/crush/internal/skills"
 	"github.com/charmbracelet/crush/internal/sshaskpass"
 	"github.com/charmbracelet/crush/internal/stringext"
@@ -2184,6 +2185,9 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 
 	switch msg := action.(type) {
 	// Generic dialog messages
+	case dialog.ActionTellAboutJob:
+		m.dialog.CloseFrontDialog()
+		return m.sendJobNoticeText(jobNoticePrompt(msg.JobID, msg.Message))
 	case dialog.ActionClose:
 		if isOnboarding && m.dialog.ContainsDialog(dialog.ModelsID) {
 			break
@@ -3381,6 +3385,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					// reopens the dismissed handoff prompt.
 					if m.mode == uiInputModePlan && m.hasSession() && m.planReadySessionID == m.session.ID {
 						m.openPlanHandoff()
+						return nil
 					}
 					return nil
 				}
@@ -5423,6 +5428,77 @@ func (m *UI) ensureSession() (tea.Cmd, error) {
 }
 
 // sendMessage sends a message with the given content and attachments.
+// jobOutputLimit bounds how much of a finished job's output is pasted into the
+// prompt that hands it to the agent. Past that, the agent reads the rest with
+// job_output.
+const jobOutputLimit = 8000
+
+// jobNoticePrompt renders the message that hands a finished job to the agent.
+//
+// It states plainly that this is the result of a job started earlier — the
+// agent may have changed context since — and carries the captured output so no
+// second call is needed to see it.
+func jobNoticePrompt(jobID, message string) string {
+	if jobID == "" {
+		return message
+	}
+	bgShell, ok := shell.GetBackgroundShellManager().Get(jobID)
+	if !ok {
+		// Pruned, or owned by another process: fall back to the summary
+		// and let the agent fetch it.
+		return fmt.Sprintf("%s — read its output with job_output %s.", strings.TrimSuffix(message, "."), jobID)
+	}
+
+	subject := strings.TrimSpace(bgShell.Description)
+	if subject == "" {
+		subject = oneLineSubject(bgShell.Command)
+	}
+	header := fmt.Sprintf(
+		"This is the result of background job %s, which you started earlier and which has now finished: %s (exit %d).",
+		jobID, subject, bgShell.ExitStatus(),
+	)
+
+	stdout, stderr, _, _ := bgShell.GetOutput()
+	output := strings.TrimSpace(strings.Join([]string{stdout, stderr}, "\n"))
+	if output == "" {
+		return header + " It printed nothing."
+	}
+	return fmt.Sprintf("%s\n\nIts output:\n\n%s", header, clipJobOutput(output))
+}
+
+// oneLineSubject flattens a command onto one line and bounds its width, so the
+// prompt header stays readable however the command was written.
+func oneLineSubject(command string) string {
+	flat := strings.Join(strings.Fields(command), " ")
+	if len(flat) <= 80 {
+		return flat
+	}
+	return flat[:80] + "..."
+}
+
+// clipJobOutput keeps the head and the tail of oversized job output, so the
+// prompt stays bounded without losing either end of the result.
+func clipJobOutput(output string) string {
+	if len(output) <= jobOutputLimit {
+		return output
+	}
+	const marker = "\n... [output clipped; read the rest with job_output] ...\n"
+	half := (jobOutputLimit - len(marker)) / 2
+	return output[:half] + marker + output[len(output)-half:]
+}
+
+// sendJobNoticeText sends a finished-job notice to the agent. It is hidden:
+// the user did not type it, so it must not be echoed into the conversation as
+// if they had. No prompt-history refresh for the same reason.
+func (m *UI) sendJobNoticeText(prompt string) tea.Cmd {
+	if prompt == "" {
+		return nil
+	}
+	m.randomizePlaceholders()
+	m.historyReset()
+	return m.sendMessageInternal(prompt, true)
+}
+
 func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.Cmd {
 	return m.sendMessageInternal(content, false, attachments...)
 }
@@ -6095,6 +6171,18 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 		// Terminal edge like TypeAgentFinished; fall through to the
 		// busy/queue refresh below.
 		m.endPendingTurn(n.SessionID)
+	case notify.TypeJobFinished:
+		// A background job's turn has usually ended already, so this is
+		// not a busy→idle edge. In a mode that skips prompts the result
+		// goes straight to the agent, which keeps that mode free of any
+		// extra interaction; otherwise the job is offered in the same kind
+		// of box a permission request uses.
+		if m.yoloActive() {
+			return m.sendJobNoticeText(jobNoticePrompt(n.JobID, n.Message))
+		}
+		m.dialog.CloseDialog(dialog.JobNoticeID)
+		m.dialog.OpenDialogWithGrace(dialog.NewJobNotice(m.com, n.JobID, n.Message))
+		return nil
 	case notify.TypeReAuthenticate:
 		return m.handleReAuthenticate(n.ProviderID)
 	case notify.TypeAWSSSOAuth:

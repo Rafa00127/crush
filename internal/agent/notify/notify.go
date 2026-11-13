@@ -9,6 +9,10 @@ type Type string
 const (
 	// TypeAgentFinished indicates the agent has completed its turn.
 	TypeAgentFinished Type = "agent_finished"
+	// TypeJobFinished indicates a background shell job has finished. It
+	// carries no session edge: the turn it belonged to has usually ended,
+	// so observers only tell the user the job is done.
+	TypeJobFinished Type = "job_finished"
 	// TypeReAuthenticate indicates the agent encountered an
 	// authentication error and the user needs to re-authenticate.
 	TypeReAuthenticate Type = "re_authenticate"
@@ -42,6 +46,9 @@ type Notification struct {
 	// Message carries the error text for TypeAgentError. Other
 	// notification types ignore it.
 	Message string
+	// JobID is the background shell job a TypeJobFinished notification is
+	// about, so a client can offer to read its output.
+	JobID string
 	// AWSSOCommand carries the shell command for TypeAWSSSOAuth.
 	AWSSOCommand string
 	// AWSSOURL carries the SSO verification URL for TypeAWSSSOAuth once it

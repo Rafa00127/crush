@@ -391,6 +391,7 @@ func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, 
 			Background:       true,
 			ShellID:          bgShell.ID,
 		}
+		bgShell.MarkBackgrounded()
 		response := fmt.Sprintf("Background shell started with ID: %s\n\nUse job_output tool to view output or job_kill to terminate.%s", bgShell.ID, redirectSection(params.Command))
 		return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
 	}
@@ -463,6 +464,7 @@ func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, 
 	}
 
 	// Still running - keep as background job
+	bgShell.MarkBackgrounded()
 	metadata := BashResponseMetadata{
 		StartTime:        startTime.UnixMilli(),
 		EndTime:          time.Now().UnixMilli(),

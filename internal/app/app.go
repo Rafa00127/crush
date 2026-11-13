@@ -149,6 +149,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	}
 
 	app.setupEvents()
+	app.watchBackgroundJobs()
 
 	// Start the pinentry watcher so terminal-based GPG passphrase prompts
 	// (pinentry-curses/pinentry-tty) get exclusive terminal access while a
@@ -758,6 +759,36 @@ func grokSmallModel(pc config.ProviderConfig) *catwalk.Model {
 		return &pc.GrokModels[len(pc.GrokModels)-1]
 	}
 	return nil
+}
+
+// watchBackgroundJobs publishes a notification whenever a shell job that was
+// handed to the background finishes, so the user learns about it without
+// asking. Jobs that returned their output synchronously never notify: their
+// result is already in the conversation.
+func (app *App) watchBackgroundJobs() {
+	shell.GetBackgroundShellManager().SetCompletionHandler(func(job *shell.BackgroundShell) {
+		if app.agentNotifications == nil {
+			return
+		}
+		app.agentNotifications.Publish(pubsub.CreatedEvent, notify.Notification{
+			Type:    notify.TypeJobFinished,
+			JobID:   job.ID,
+			Message: backgroundJobMessage(job),
+		})
+	})
+}
+
+// backgroundJobMessage describes a finished job in one line for the user.
+func backgroundJobMessage(job *shell.BackgroundShell) string {
+	subject := job.Description
+	if subject == "" {
+		subject = job.Command
+	}
+	subject = strings.Join(strings.Fields(subject), " ")
+	if len(subject) > 80 {
+		subject = subject[:80] + "..."
+	}
+	return fmt.Sprintf("Job %s finished (exit %d) — %s", job.ID, job.ExitStatus(), subject)
 }
 
 func (app *App) setupEvents() {

@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/shell"
 	"github.com/charmbracelet/crush/internal/ui/attachments"
 	"github.com/charmbracelet/crush/internal/ui/chat"
 	"github.com/charmbracelet/crush/internal/ui/common"
@@ -986,4 +987,98 @@ func TestStatusModeBadge(t *testing.T) {
 		s.SetMode(tc.mode, tc.perm)
 		require.Contains(t, ansi.Strip(s.modeBadge()), tc.badge, tc.name)
 	}
+}
+
+// Telling the agent about a finished job sends a prompt it can act on.
+func TestSendJobNoticeText_PromptsTheAgent(t *testing.T) {
+	t.Parallel()
+
+	u, ws := newPlanUI(t, "sess-1")
+	ws.agentReady = true
+
+	require.Nil(t, u.sendJobNoticeText(""), "an empty prompt sends nothing")
+
+	cmd := u.sendJobNoticeText(jobNoticePrompt("00A", "Job 00A finished (exit 0) — restore frames"))
+	require.NotNil(t, cmd)
+	drainCmds(cmd)
+
+	require.Len(t, ws.runPrompts, 1)
+	require.Contains(t, ws.runPrompts[0], "Job 00A finished (exit 0)")
+	require.Contains(t, ws.runPrompts[0], "job_output 00A", "a job that cannot be found still names how to read it")
+	require.True(t, ws.runHidden[0], "the user did not type this, so it must not be echoed as their message")
+}
+
+// The prompt carries the job's output, so the agent does not need a second
+// call to see what the command printed.
+func TestJobNoticePrompt_CarriesTheOutput(t *testing.T) {
+	t.Parallel()
+
+	manager := shell.GetBackgroundShellManager()
+	job, err := manager.Start(t.Context(), t.TempDir(), nil, "echo carried-output", "", 50)
+	require.NoError(t, err)
+	job.Wait()
+
+	prompt := jobNoticePrompt(job.ID, "Job "+job.ID+" finished (exit 0) — echo")
+
+	require.Contains(t, prompt, "This is the result of background job "+job.ID,
+		"the agent is told when the job is from, not just what it printed")
+	require.Contains(t, prompt, "which you started earlier")
+	require.Contains(t, prompt, "exit 0")
+	require.Contains(t, prompt, "echo carried-output")
+	require.Contains(t, prompt, "carried-output")
+	require.NotContains(t, prompt, "job_output "+job.ID, "no round trip is needed when the output is already here")
+}
+
+// drainCmds runs a command tree for its side effects, dropping the messages:
+// feeding agentRunSubmittedMsg back into a stub UI would touch workspace state
+// this test does not care about.
+func drainCmds(cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	if batch, ok := cmd().(tea.BatchMsg); ok {
+		for _, c := range batch {
+			drainCmds(c)
+		}
+	}
+}
+
+// In a mode that skips prompts the finished-job notice goes straight to the
+// agent: yolo stays free of extra interaction, exactly as before the notice
+// existed.
+func TestJobFinished_AutoConfirmedInYoloMode(t *testing.T) {
+	t.Parallel()
+
+	u, ws := newPlanUI(t, "sess-1")
+	ws.agentReady = true
+	u.permModeCache.set(permission.PermissionModeYolo)
+
+	cmd := u.handleAgentNotification(notify.Notification{
+		Type:    notify.TypeJobFinished,
+		JobID:   "00A",
+		Message: "Job 00A finished (exit 0) — restore frames",
+	})
+	require.NotNil(t, cmd)
+	drainCmds(cmd)
+
+	require.Len(t, ws.runPrompts, 1)
+	require.Contains(t, ws.runPrompts[0], "job_output 00A")
+	require.False(t, u.dialog.ContainsDialog(dialog.JobNoticeID), "yolo mode opens no dialog")
+}
+
+// In normal mode the notice waits for the user instead of starting a turn on
+// its own.
+func TestJobFinished_WaitsForEnterOutsideYolo(t *testing.T) {
+	t.Parallel()
+
+	u, ws := newPlanUI(t, "sess-1")
+	ws.agentReady = true
+
+	require.Nil(t, u.handleAgentNotification(notify.Notification{
+		Type:    notify.TypeJobFinished,
+		JobID:   "00B",
+		Message: "Job 00B finished (exit 1) — restore frames",
+	}))
+	require.Empty(t, ws.runPrompts, "a normal-mode notice must not start a turn")
+	require.True(t, u.dialog.ContainsDialog(dialog.JobNoticeID), "the job is offered in a dialog")
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -460,4 +461,44 @@ func TestBackgroundShellManager_KillTimeout(t *testing.T) {
 
 	_, ok := manager.Get("wedged")
 	require.True(t, ok, "a shell that outlived the kill stays reachable for a retry")
+}
+
+// Only jobs that were handed to the caller as background jobs notify anyone:
+// a command that returned its output synchronously already delivered its
+// result, and a notification for it would be noise.
+func TestBackgroundShellManager_NotifiesOnlyBackgroundedJobs(t *testing.T) {
+	t.Parallel()
+
+	manager := newBackgroundShellManager()
+	var finished []string
+	var mu sync.Mutex
+	manager.SetCompletionHandler(func(job *BackgroundShell) {
+		mu.Lock()
+		finished = append(finished, job.ID)
+		mu.Unlock()
+	})
+
+	// Synchronous: finishes before the caller hands it off.
+	syncJob, err := manager.Start(t.Context(), t.TempDir(), nil, "echo sync", "", testMaxJobs)
+	require.NoError(t, err)
+	syncJob.Wait()
+
+	// Backgrounded: marked before it finishes.
+	bgJob, err := manager.Start(t.Context(), t.TempDir(), nil, "echo bg", "", testMaxJobs)
+	require.NoError(t, err)
+	bgJob.MarkBackgrounded()
+	bgJob.Wait()
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(finished) == 1
+	}, 3*time.Second, 10*time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{bgJob.ID}, finished)
+	require.True(t, bgJob.WasBackgrounded())
+	require.False(t, syncJob.WasBackgrounded())
+	require.Equal(t, 0, bgJob.ExitStatus())
 }
