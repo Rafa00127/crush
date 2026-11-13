@@ -42,8 +42,14 @@ git status --short && git diff --stat        # 在途改动
 | 默认交棒阈值 60s → 15s | 同上 + `internal/config/config.go` + `internal/shellconfig/options.go` | 让对话尽早空出来；新增 `option auto-background-after N` / `options.auto_background_after` |
 | 交棒文案 | `bash.go`、`bash.md.tpl`、`job_output.md` | 明确告诉模型"已转后台、输出还在、你可以继续聊"，并说明如何回头看结果 |
 
-尚未做：Windows 侧没有 Job Object，`job_kill` 杀不到孙进程；看不到 Crush 之外的
-残留进程；作业结果只在内存里（重启即丢）。
+**有意保留的取舍**：Windows 侧不做进程树击杀（没有 Job Object，`job_kill` 只终止
+直接子进程）。这是对的——`npm start`、`python -m http.server` 这类脚本的产出物本来
+就该活过父进程；连带杀掉会毁掉正常用法。可见性由作业本身提供：`job_output` 不带
+`shell_id` 会列出所有作业（running 优先），每行带 elapsed / 最后输出时间 / 已收字节，
+模型不用猜"还有没有东西在跑、是不是卡住"。
+
+尚未做：看不到**脱离作业管理**的残留进程（例如上个会话遗留的 python 仍在占显存，
+只能靠外部命令查）；作业结果只在内存里（重启即丢）。
 
 ---
 
