@@ -754,7 +754,7 @@ func TestBashTool_RunInBackgroundDoesNotSendTheModelFetching(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
 	require.True(t, meta.Background)
 	require.NotContains(t, resp.Content, "Use job_output")
-	require.Contains(t, resp.Content, "delivered to you")
+	require.Contains(t, resp.Content, "will be delivered to you")
 	require.Contains(t, resp.Content, "job_kill "+meta.ShellID)
 
 	require.NoError(t, shell.GetBackgroundShellManager().Kill(meta.ShellID))

@@ -32,7 +32,7 @@ Common shell builtins and core utils available on Windows.
 - Backgrounding buys you the time the command takes, so spend it: start the job, then keep working
 - Do NOT call job_output right after starting a job. It returns the output so far, and a job that just started has printed nothing
 - Call job_output once the job's result is the next thing you need, or once you have run out of other work
-- Once a command is handed to the background you do NOT need to fetch its result: when the job finishes its output is delivered to you automatically (offered for confirmation in normal mode, by itself in yolo mode). Carry on with the conversation or with other work
+- Once a command is handed to the background you do NOT need to fetch its result: when the job finishes its output will be delivered to you automatically (offered for confirmation in normal mode, by itself in yolo mode). Carry on with the conversation or with other work
 - Call job_output only to inspect a running job (is it still producing output?) or when the user asks about one. Never call it in a loop to wait for a job to finish: it cannot make the job faster, and each call costs a turn and context
 - Before starting another long command, call job_output with no shell_id to list every job: a previous run that is still going keeps its resources (GPU memory, a port, a lock file) and will fight the new one
 - A command that redirects its output (`> out.log 2>&1`) writes nothing into the job, so its output stays empty however busy it is. Such a command is backgrounded almost immediately instead of waiting out the threshold: read the log file for progress and for the result, and go back to it when you need the outcome rather than polling the job
