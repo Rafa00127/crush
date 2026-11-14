@@ -691,9 +691,9 @@
         "job_output_wait": {
           "type": "integer",
           "description": "Seconds job_output may block when wait=true",
-          "default": 15,
+          "default": 0,
           "examples": [
-            0,
+            15,
             30
           ]
         },

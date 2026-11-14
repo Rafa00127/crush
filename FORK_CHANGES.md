@@ -37,7 +37,8 @@ git status --short && git diff --stat        # 在途改动
 | 作业完成弹框 | `internal/ui/dialog/job_notice.go`（新）、`internal/ui/model/ui.go` | 与 **Permission required 同一套外壳**（`Styles.Dialog.View` + 渐变标题 + 两个按钮）：`Tell Crush` / `Dismiss`，`enter` 确认、`←/→`/`tab` 切换、`y`/`n` 快捷；不再用状态栏那行字 |
 | 转交时直接带输出 | `internal/ui/model/ui.go` | 确认后发出的是一条 **hidden user 消息**（用户没打字，不能当成他的话回声）且自带结果：`This is the result of background job 00A, which you started earlier … Its output: <…>`，模型不需要再调 `job_output`；超长保留头尾（8000 字符）并提示可再读 |
 | yolo 自动转交 | 同上 | yolo/sysadmin 不弹框、自动把同一条带输出的消息发给模型，行为与加提示之前一致 |
-| `job_output` 有限等待 | `internal/agent/tools/job_output.go`、`internal/config/config.go`、`internal/shellconfig/options.go` | `wait=true` 最多等 `job_output_wait`（默认 15s，`0` 禁用），超时返回 `running` + 已收输出并注明"提前返回"；避免模型在无等待选项时紧循环轮询（实测会 1s 一次刷满聊天记录） |
+| 作业结果自动送达 | 见"作业完成提示/弹框"两行 | 作业结束时输出随消息送到模型，**模型不需要**去取；提示词明写"不要为等结果轮询 `job_output`" |
+| `job_output` 默认不等待 | `internal/agent/tools/job_output.go`、`internal/config/config.go`、`internal/shellconfig/options.go` | `job_output_wait` 默认 **0**（不等）：等结果只会占住 turn。需要时配 15/30s，到点返回 `running` + 已收输出；`0` 时若模型传 `wait=true` 会明确告知"等待已禁用" |
 | 重定向输出检测 | `internal/agent/tools/bash.go` | 命令写日志文件时作业永远是 `no output`；用 mvdan 解析器只看**最后一条顶层语句**的重定向，并点名日志文件 |
 | 重定向命令 2s 交棒 | 同上（`RedirectedOutputGrace`） | 输出不可能到达我们这边，等满阈值没有意义 |
 | 默认交棒阈值 60s → 15s | 同上 + `internal/config/config.go` + `internal/shellconfig/options.go` | 让对话尽早空出来；新增 `option auto-background-after N` / `options.auto_background_after` |
@@ -78,10 +79,12 @@ processes may outlive Crush`，只在有 running 作业时显示。**只做提�
 ——强杀会误伤正当用法：例如"帮我把游戏/服务拉起来"，玩的时候顺手关了 Crush，游戏不该
 被连带杀掉。
 
-~~可能待办（中优先）：把"作业不能等待"做成可配置~~ **已实现**（见第 1 节
-`job_output` 有限等待）：`option job-output-wait N`，默认 15s，`0` 完全禁用等待。选 15s
-而不是无限，是因为旧行为的无限等待会把整轮对话挂住；选有上限是因为完全禁等会让模型
-一秒一次地轮询（实测：同一 job 出现 `elapsed 19s/21s/22s/23s` 四条记录）。
+**关于"模型老去问 `job_output`"**（2026-11-14 结论）：根因不是缺等待手段，而是提示词
+没说清"结果会自动送到你手上"。模型以为必须主动取，于是 1 秒一次地刷（实测同一 job 出现
+`elapsed 19s/21s/22s/23s` 四条记录）。现在两处一起改：`bash.md.tpl` 与 `job_output.md`
+明确"作业结束时输出自动送达，**不要为等结果轮询**，`job_output` 只用于查看进度或用户问起"，
+同时 `job_output_wait` 默认 0（配置可开）。有界等待仍保留：需要"下一步马上要用结果"时，
+`option job-output-wait 15` 即可，且永远不会无限挂。
 
 ---
 

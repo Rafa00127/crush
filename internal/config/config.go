@@ -483,8 +483,9 @@ type Options struct {
 	// keeps running and its output stays readable with job_output.
 	AutoBackgroundAfter *int `json:"auto_background_after,omitempty" jsonschema:"description=Seconds the bash tool waits for a command before moving it to the background and freeing the turn. The command keeps running and job_output still reads its output. 0 or negative restores the default.,default=15,example=5,example=60"`
 	// JobOutputWait caps how long job_output may block when asked to wait
-	// for a job. 0 disables waiting entirely, so the model can only poll.
-	JobOutputWait *int `json:"job_output_wait,omitempty" jsonschema:"description=Seconds job_output may block when wait=true, then it returns with the output so far. 0 disables waiting so the model can only poll. Negative values are invalid.,default=15,example=0,example=30"`
+	// for a job. 0, the default, disables waiting: a job's result is
+	// delivered when it finishes, so waiting only holds the turn.
+	JobOutputWait *int `json:"job_output_wait,omitempty" jsonschema:"description=Seconds job_output may block when wait=true, then it returns with the output so far. 0 disables waiting, which is the default because a finished job delivers its output by itself. Negative values are invalid.,default=0,example=15,example=30"`
 	// PinentryIntegrated renders GPG passphrase/PIN prompts as a native
 	// Crush dialog (loopback pinentry) instead of handing the terminal
 	// over to an external pinentry program. No GPG or git configuration
@@ -638,10 +639,9 @@ func (o *Options) GetAutoBackgroundAfter() int {
 	return *o.AutoBackgroundAfter
 }
 
-// DefaultJobOutputWait caps how long job_output waits for a job when the user
-// has not configured a limit. Short on purpose: a job that is still running
-// after this is better answered by keeping the conversation free.
-const DefaultJobOutputWait = 15
+// DefaultJobOutputWait is zero: a finished job delivers its own output, so
+// waiting on one only holds the conversation. Set job_output_wait to allow it.
+const DefaultJobOutputWait = 0
 
 // GetJobOutputWait returns how long job_output may block, or zero when waiting
 // is disabled.
