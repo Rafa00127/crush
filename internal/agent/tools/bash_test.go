@@ -96,6 +96,7 @@ func TestBashTool_CustomAutoBackgroundThreshold(t *testing.T) {
 	require.True(t, meta.Background)
 	require.NotEmpty(t, meta.ShellID)
 	require.Contains(t, resp.Content, "moved to the background")
+	require.NotContains(t, resp.Content, "Use job_output", "a handoff must not send the model to fetch its own result")
 
 	bgManager := shell.GetBackgroundShellManager()
 	require.NoError(t, bgManager.Kill(meta.ShellID))
@@ -735,4 +736,26 @@ func TestBashTool_SetupRedirectDoesNotShortenTheWait(t *testing.T) {
 	var meta BashResponseMetadata
 	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
 	require.False(t, meta.Background, "a command that finishes within the threshold stays synchronous")
+}
+
+// A job started with run_in_background reports how it ends, not how to go
+// looking for it: the output arrives by itself.
+func TestBashTool_RunInBackgroundDoesNotSendTheModelFetching(t *testing.T) {
+	tool := newBashToolForTest(t.TempDir())
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+
+	resp := runBashTool(t, tool, ctx, BashParams{
+		Description:     "background echo",
+		Command:         "sleep 5 && echo late",
+		RunInBackground: true,
+	})
+
+	var meta BashResponseMetadata
+	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
+	require.True(t, meta.Background)
+	require.NotContains(t, resp.Content, "Use job_output")
+	require.Contains(t, resp.Content, "delivered to you")
+	require.Contains(t, resp.Content, "job_kill "+meta.ShellID)
+
+	require.NoError(t, shell.GetBackgroundShellManager().Kill(meta.ShellID))
 }

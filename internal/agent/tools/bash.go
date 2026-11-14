@@ -25,7 +25,7 @@ type BashParams struct {
 	Description         string `json:"description" description:"A brief description of what the command does, try to keep it under 30 characters or so"`
 	Command             string `json:"command" description:"The command to execute"`
 	WorkingDir          string `json:"working_dir,omitempty" description:"The working directory to execute the command in (defaults to current directory)"`
-	RunInBackground     bool   `json:"run_in_background,omitempty" description:"Set to true (boolean) to run this command in the background. Use job_output to read the output later."`
+	RunInBackground     bool   `json:"run_in_background,omitempty" description:"Set to true (boolean) to run this command in the background. Its output is delivered to you when it finishes; you do not need to fetch it."`
 	AutoBackgroundAfter int    `json:"auto_background_after,omitempty" description:"Seconds to wait before moving a still-running command to the background and freeing the turn. Defaults to the configured auto_background_after"`
 }
 
@@ -392,7 +392,9 @@ func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, 
 			ShellID:          bgShell.ID,
 		}
 		bgShell.MarkBackgrounded()
-		response := fmt.Sprintf("Background shell started with ID: %s\n\nUse job_output tool to view output or job_kill to terminate.%s", bgShell.ID, redirectSection(params.Command))
+		response := fmt.Sprintf(
+			"Background shell started with ID: %s.\n\nIt runs on its own: when it finishes, its output is delivered to you, so there is nothing to wait for. job_kill %s stops it early.%s",
+			bgShell.ID, bgShell.ID, redirectSection(params.Command))
 		return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
 	}
 
