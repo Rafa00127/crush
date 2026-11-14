@@ -37,6 +37,7 @@ git status --short && git diff --stat        # 在途改动
 | 作业完成弹框 | `internal/ui/dialog/job_notice.go`（新）、`internal/ui/model/ui.go` | 与 **Permission required 同一套外壳**（`Styles.Dialog.View` + 渐变标题 + 两个按钮）：`Tell Crush` / `Dismiss`，`enter` 确认、`←/→`/`tab` 切换、`y`/`n` 快捷；不再用状态栏那行字 |
 | 转交时直接带输出 | `internal/ui/model/ui.go` | 确认后发出的是一条 **hidden user 消息**（用户没打字，不能当成他的话回声）且自带结果：`This is the result of background job 00A, which you started earlier … Its output: <…>`，模型不需要再调 `job_output`；超长保留头尾（8000 字符）并提示可再读 |
 | yolo 自动转交 | 同上 | yolo/sysadmin 不弹框、自动把同一条带输出的消息发给模型，行为与加提示之前一致 |
+| `job_output` 有限等待 | `internal/agent/tools/job_output.go`、`internal/config/config.go`、`internal/shellconfig/options.go` | `wait=true` 最多等 `job_output_wait`（默认 15s，`0` 禁用），超时返回 `running` + 已收输出并注明"提前返回"；避免模型在无等待选项时紧循环轮询（实测会 1s 一次刷满聊天记录） |
 | 重定向输出检测 | `internal/agent/tools/bash.go` | 命令写日志文件时作业永远是 `no output`；用 mvdan 解析器只看**最后一条顶层语句**的重定向，并点名日志文件 |
 | 重定向命令 2s 交棒 | 同上（`RedirectedOutputGrace`） | 输出不可能到达我们这边，等满阈值没有意义 |
 | 默认交棒阈值 60s → 15s | 同上 + `internal/config/config.go` + `internal/shellconfig/options.go` | 让对话尽早空出来；新增 `option auto-background-after N` / `options.auto_background_after` |
@@ -77,23 +78,10 @@ processes may outlive Crush`，只在有 running 作业时显示。**只做提�
 ——强杀会误伤正当用法：例如"帮我把游戏/服务拉起来"，玩的时候顺手关了 Crush，游戏不该
 被连带杀掉。
 
-可能待办（中优先，2026-11-13 记录）：**把"作业不能等待"做成可配置**，需要时能回到
-旧行为。现在 `job_output` 的 `wait` 参数被彻底删掉，模型没有任何办法把 turn 挂住；
-如果要恢复阻塞能力，加一个配置项（例如 `option job-output-wait true` /
-`options.job_output_wait`），默认关闭（= 当前行为）。三种取值：
-
-| 值 | 含义 |
-|---|---|
-| `false`（默认） | 不能等待，只能轮询/读日志（当前） |
-| `true` | 允许 `wait=true` 无限阻塞——回到旧行为，代价是排队消息要等 step 边界 |
-| 数字 | 允许等待但最多 N 秒，超时返回 `running` + 已收输出 |
-
-实现要点：`JobOutputParams` 加回 `Wait`；`Options` 加 `JobOutputWait *T` 与 getter；
-工具描述（`job_output.md`、`bash.md.tpl`）要按开关切换文案——注意工具描述是每轮固定
-token 成本，两套文案要么条件渲染，要么压成一句"受配置控制"。
-
-` 是否仍允许无限等待、以及"等不到时返回什么"要和上一条（退出提示）一起定，
-它们解决的是同一个痛点的两端。
+~~可能待办（中优先）：把"作业不能等待"做成可配置~~ **已实现**（见第 1 节
+`job_output` 有限等待）：`option job-output-wait N`，默认 15s，`0` 完全禁用等待。选 15s
+而不是无限，是因为旧行为的无限等待会把整轮对话挂住；选有上限是因为完全禁等会让模型
+一秒一次地轮询（实测：同一 job 出现 `elapsed 19s/21s/22s/23s` 四条记录）。
 
 ---
 

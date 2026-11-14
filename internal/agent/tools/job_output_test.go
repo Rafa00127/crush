@@ -85,7 +85,7 @@ func TestJobOutputListsJobs(t *testing.T) {
 	require.NoError(t, err)
 	bgShell.Wait()
 
-	tool := NewJobOutputTool(t.TempDir())
+	tool := NewJobOutputTool(t.TempDir(), 15*time.Second)
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{ID: "call_1", Name: JobOutputToolName, Input: `{}`})
 	require.NoError(t, err)
 	require.Contains(t, resp.Content, "background job(s)")
@@ -103,7 +103,7 @@ func TestJobOutputNamesRedirectTarget(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = manager.Kill(bgShell.ID) })
 
-	tool := NewJobOutputTool(t.TempDir())
+	tool := NewJobOutputTool(t.TempDir(), 15*time.Second)
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
 		ID:    "call_2",
 		Name:  JobOutputToolName,
@@ -124,7 +124,7 @@ func TestJobOutputDoesNotBlockOnRunningJob(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = manager.Kill(bgShell.ID) })
 
-	tool := NewJobOutputTool(t.TempDir())
+	tool := NewJobOutputTool(t.TempDir(), 15*time.Second)
 	start := time.Now()
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
 		ID:    "call_3",
@@ -133,5 +133,69 @@ func TestJobOutputDoesNotBlockOnRunningJob(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Less(t, time.Since(start), 5*time.Second, "reading a running job must return at once")
+	require.Contains(t, resp.Content, "Status: running")
+}
+
+// wait=true blocks for a short job and returns its output.
+func TestJobOutputWaitReturnsOnCompletion(t *testing.T) {
+	t.Parallel()
+
+	manager := shell.GetBackgroundShellManager()
+	bgShell, err := manager.Start(t.Context(), t.TempDir(), nil, "echo waited-output", "", testMaxJobs)
+	require.NoError(t, err)
+
+	tool := NewJobOutputTool(t.TempDir(), 5*time.Second)
+	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
+		ID:    "call_wait",
+		Name:  JobOutputToolName,
+		Input: fmt.Sprintf(`{"shell_id":%q,"wait":true}`, bgShell.ID),
+	})
+	require.NoError(t, err)
+	require.Contains(t, resp.Content, "Status: completed")
+	require.Contains(t, resp.Content, "waited-output")
+	require.NotContains(t, resp.Content, "returned early")
+}
+
+// A wait that outlives its limit returns the output so far and says so,
+// instead of holding the turn open the way an unbounded wait did.
+func TestJobOutputWaitIsBounded(t *testing.T) {
+	t.Parallel()
+
+	manager := shell.GetBackgroundShellManager()
+	bgShell, err := manager.Start(t.Context(), t.TempDir(), nil, "sleep 30", "", testMaxJobs)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = manager.Kill(bgShell.ID) })
+
+	tool := NewJobOutputTool(t.TempDir(), 300*time.Millisecond)
+	start := time.Now()
+	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
+		ID:    "call_bounded",
+		Name:  JobOutputToolName,
+		Input: fmt.Sprintf(`{"shell_id":%q,"wait":true}`, bgShell.ID),
+	})
+	require.NoError(t, err)
+	require.Less(t, time.Since(start), 5*time.Second, "the wait must give up on its own")
+	require.Contains(t, resp.Content, "Status: running")
+	require.Contains(t, resp.Content, "returned early")
+}
+
+// A zero limit disables waiting entirely.
+func TestJobOutputWaitDisabledReturnsAtOnce(t *testing.T) {
+	t.Parallel()
+
+	manager := shell.GetBackgroundShellManager()
+	bgShell, err := manager.Start(t.Context(), t.TempDir(), nil, "sleep 30", "", testMaxJobs)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = manager.Kill(bgShell.ID) })
+
+	tool := NewJobOutputTool(t.TempDir(), 0)
+	start := time.Now()
+	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
+		ID:    "call_disabled",
+		Name:  JobOutputToolName,
+		Input: fmt.Sprintf(`{"shell_id":%q,"wait":true}`, bgShell.ID),
+	})
+	require.NoError(t, err)
+	require.Less(t, time.Since(start), 2*time.Second)
 	require.Contains(t, resp.Content, "Status: running")
 }

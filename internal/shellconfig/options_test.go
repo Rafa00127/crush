@@ -291,3 +291,20 @@ func TestOption_AutoBackgroundAfter(t *testing.T) {
 	opts := result["options"].(map[string]any)
 	require.Equal(t, float64(5), opts["auto_background_after"])
 }
+
+func TestOption_JobOutputWait(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `option job-output-wait 0`
+	path := filepath.Join(dir, "crushrc")
+
+	jsonBytes, err := LoadShellConfig(t.Context(), path, []byte(script))
+	require.NoError(t, err)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &result))
+
+	opts := result["options"].(map[string]any)
+	require.Equal(t, float64(0), opts["job_output_wait"])
+}

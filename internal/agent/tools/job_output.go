@@ -22,6 +22,7 @@ var jobOutputDescription string
 
 type JobOutputParams struct {
 	ShellID string `json:"shell_id,omitempty" description:"The ID of the background shell to retrieve output from. Omit it to list every job and its state"`
+	Wait    bool   `json:"wait,omitempty" description:"If true, block until the job finishes or the configured wait expires, whichever comes first. Returns the output so far either way"`
 }
 
 type JobOutputResponseMetadata struct {
@@ -139,7 +140,7 @@ func oneLine(command string, limit int) string {
 	return flat[:limit] + "..."
 }
 
-func NewJobOutputTool(spillDir string) fantasy.AgentTool {
+func NewJobOutputTool(spillDir string, waitLimit time.Duration) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		JobOutputToolName,
 		jobOutputDescription,
@@ -152,6 +153,18 @@ func NewJobOutputTool(spillDir string) fantasy.AgentTool {
 			bgShell, ok := bgManager.Get(params.ShellID)
 			if !ok {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("background shell not found: %s", params.ShellID)), nil
+			}
+
+			// Waiting is bounded: a job that outlives the limit returns
+			// what it has, so a wait can never hold the turn open the way
+			// an unbounded one did.
+			timedOut := false
+			if params.Wait && waitLimit > 0 && !bgShell.IsDone() {
+				waitCtx, cancel := context.WithTimeout(ctx, waitLimit)
+				if !bgShell.WaitContext(waitCtx) && waitCtx.Err() != nil && ctx.Err() == nil {
+					timedOut = true
+				}
+				cancel()
 			}
 
 			stdout, stderr, done, err := bgShell.GetOutput()
@@ -198,6 +211,11 @@ func NewJobOutputTool(spillDir string) fantasy.AgentTool {
 
 			status := jobStatusText(bgShell.Elapsed(), idle, metadata.OutputBytes, done)
 			result := fmt.Sprintf("Status: %s\n\n%s", status, output)
+			if timedOut {
+				result += fmt.Sprintf(
+					"\n\nStill running after waiting %s, so this returned early instead of holding the turn: keep working and read the job again when its result is what you need.",
+					formatJobDuration(waitLimit))
+			}
 			if note := redirectNote(bgShell.Command, metadata.OutputBytes, done); note != "" {
 				result += "\n\n" + note
 			}

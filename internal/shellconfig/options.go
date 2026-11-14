@@ -35,6 +35,7 @@ import (
 //	option request-timeout 0
 //	option max-background-jobs 200
 //	option auto-background-after 5
+//	option job-output-wait 0
 //	option pinentry-integrated false
 //	option pinentry-cache-timeout 300
 //
@@ -219,6 +220,7 @@ var optionSpecs = map[string]optionSpec{
 	"request-timeout":        {jsonKey: "request_timeout", kind: optInt},
 	"max-background-jobs":    {jsonKey: "max_background_jobs", kind: optInt},
 	"auto-background-after":  {jsonKey: "auto_background_after", kind: optInt},
+	"job-output-wait":        {jsonKey: "job_output_wait", kind: optInt},
 	"pinentry-cache-timeout": {jsonKey: "pinentry_cache_timeout", kind: optInt},
 
 	// List fields. Keys are singular because each call appends one value.
