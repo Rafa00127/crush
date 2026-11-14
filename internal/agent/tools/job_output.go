@@ -159,6 +159,7 @@ func NewJobOutputTool(spillDir string, waitLimit time.Duration) fantasy.AgentToo
 			// what it has, so a wait can never hold the turn open the way
 			// an unbounded one did.
 			timedOut := false
+			waitDisabled := params.Wait && waitLimit <= 0
 			if params.Wait && waitLimit > 0 && !bgShell.IsDone() {
 				waitCtx, cancel := context.WithTimeout(ctx, waitLimit)
 				if !bgShell.WaitContext(waitCtx) && waitCtx.Err() != nil && ctx.Err() == nil {
@@ -215,6 +216,9 @@ func NewJobOutputTool(spillDir string, waitLimit time.Duration) fantasy.AgentToo
 				result += fmt.Sprintf(
 					"\n\nStill running after waiting %s, so this returned early instead of holding the turn: keep working and read the job again when its result is what you need.",
 					formatJobDuration(waitLimit))
+			}
+			if waitDisabled {
+				result += "\n\nWaiting is disabled by configuration (job_output_wait is 0), so this returned what the job has so far: read it again later."
 			}
 			if note := redirectNote(bgShell.Command, metadata.OutputBytes, done); note != "" {
 				result += "\n\n" + note

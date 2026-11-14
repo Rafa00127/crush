@@ -198,4 +198,6 @@ func TestJobOutputWaitDisabledReturnsAtOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.Less(t, time.Since(start), 2*time.Second)
 	require.Contains(t, resp.Content, "Status: running")
+	require.Contains(t, resp.Content, "Waiting is disabled by configuration",
+		"the caller must be told why its wait did nothing")
 }
