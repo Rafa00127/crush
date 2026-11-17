@@ -289,3 +289,56 @@ git reset --hard backup/pre-sync-20261114
 
 出问题的判定标准：`go build ./...` 不过、或第 5.4 的冒烟有任意一条不满足，先回滚再重来，
 不要在坏状态上继续叠改动。
+
+## 6. 极简模式（`--mode mini`）与外部 bash（2026-11-17）
+
+目标：对齐 DSH 的 minimal preset（一个 shell + 一句提示词），把固定 token 成本压到最低。
+
+### 6.1 开关与组成
+
+`crush --mode mini`（`--mode` 只接受 `""` 和 `"mini"`，其他值直接报错；可叠加 `-y`/`-yy`/`--channels`）。
+
+| 层 | mini |
+|---|---|
+| system | **一句**：`You are a helpful software engineer assistant.`（`templates/mini.md.tpl`） |
+| 会话上下文 | 一条 `<system-reminder>`，**只带 cwd**（`templates/mini_context.md.tpl`，走既有 reminder 机制，作为首条 user 消息，缓存稳定） |
+| 工具 | `bash` + `read_image` + `job_kill`（`coordinator.miniToolNames`）；MCP 一个不挂；plan agent 不受裁剪 |
+| bash 描述 | `tools/bash_mini.md`（约 700 字符）。完整版约 11.5KB，其中危险命令清单就占 ~1.7KB |
+| 上下文提醒 | 不进 AGENTS.md / 技能表（与 DSH minimal 一致） |
+| 权限 | 不改变，仍由 `-y` / `-yy` / 配置决定 |
+
+### 6.2 新增/改动的文件
+
+- `internal/agent/templates/mini.md.tpl`、`mini_context.md.tpl`（新）
+- `internal/agent/prompts.go`：`miniPrompt()`，带极短 reminder 模板
+- `internal/agent/coordinator.go`：`miniMode()`、`miniToolNames`、`effectiveToolNames` 的 mini 分支（只裁 coder）、`buildTools` 跳过 MCP、system prompt 选择
+- `internal/config/store.go`：`RuntimeOverrides.Mini`
+- `internal/cmd/root.go`：`--mode` flag
+- `internal/agent/tools/bash_mini.md`（新）与 `NewBashTool(..., miniMode)`：mini 用短描述
+- `internal/agent/tools/read_image.go` + `read_image.md`（新）：只吃图片的读取工具（PNG/JPEG/WebP/GIF、5MB、内容嗅探 MIME、工作区外仍走权限、模型不支持图片时明确提示），只挂在 mini
+- 测试：`internal/agent/mini_mode_test.go`、`internal/cmd/mode_flag_test.go`、`internal/agent/tools/read_image_test.go`、`TestBashToolMiniDescriptionIsShort`
+
+### 6.3 外部 bash（与 mini 独立，普通模式也可用）
+
+- `options.bash_path`：命中时 shell 层用 `<bash> -c "<command>"` 执行，替代内建 mvdan 解释器；`WaitDelay`、退出码、流式输出、作业模型全部不变。没设就退回解释器。
+- `options.shell_env`：`KEY=VALUE` 列表，值支持 `$VAR` / `%VAR%`；**`PATH` 是前置语义**（自动拼上继承的 PATH，不需要写 `$PATH`）；覆盖同名变量时按大小写不敏感剔除继承项（Windows 拼作 `Path`）。
+- 本机配置：`bash_path: <msys>/usr/bin/bash.exe`、`shell_env: ["PATH=<msys>/ucrt64/bin;<msys>/usr/bin", "MSYSTEM=MSYS"]`（ucrt64 在 PATH 上才能用 g++ 16.2）。
+- 注意：PATH 上的 `bash` 在 Windows 通常是 WSL，路径是 `/mnt/d/...`；msys 是 `/d/...`，两者不能混用。
+
+### 6.4 与 DSH minimal 的对照
+
+| | DSH minimal | 本 fork mini |
+|---|---|---|
+| system | 一句 | 一句（相同） |
+| 会话上下文 | `<system-reminder>` 带 cwd | 相同 |
+| 工具 | `bash` + `read_image` + `working_directory` | `bash` + `read_image` + `job_kill`（cwd 由配置决定，不需要 working_directory；job_kill 用来停掉自己起的后台作业） |
+| bash 描述 | ~595 字符 | ~700 字符 |
+| shell 持久性 | 持久（cd/export 跨调用） | **一次性**（每次新进程；提示词里明说用 `&&`） |
+
+### 6.5 明确不做的：持久 shell
+
+评估过，放弃。难点不在"起一个长期 bash"，而在：哨兵协议判断命令结束（命令自己打印同样字符串会误判）、stdout/stderr 双管道交错顺序丢失、不能包 subshell（包了 `cd`/`export` 就没了）、超时只能杀整个 shell（要保状态得 `set -m` + 杀进程组）、以及与我们"一个工具调用 = 一个进程 = 一个作业"的模型冲突（后台命令仍需单开进程）。估计 3–5 天，收益（跨调用 `cd`/`export`）不足以抵消。
+
+### 6.6 缓存注意
+
+切模式、切模型、压缩都会让前缀缓存整体失效（改的是前缀最前面的 system/tools）。mini 内部稳定；因此**任何每轮变化的东西**（当前时间、实时 git 状态、作业摘要）都不能进 system prompt / context reminder / 工具描述，只能放在历史尾部或以工具结果形式送达。

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/agent/tools"
@@ -78,10 +79,15 @@ func TestMiniPromptIsShort(t *testing.T) {
 	store, err := config.Init(t.Context(), dir, "", false)
 	require.NoError(t, err)
 
-	built, err := p.Build(t.Context(), "provider", "model", store)
+	built, reminder, err := p.BuildWithReminder(t.Context(), "provider", "model", store)
 	require.NoError(t, err)
-	require.Contains(t, built, "You are a helpful software engineer assistant.")
-	require.Contains(t, built, "one tool")
+	require.Equal(t, "You are a helpful software engineer assistant.", strings.TrimSpace(built),
+		"mini's system prompt is one sentence")
 	require.NotContains(t, built, "<workflow>", "the coder prompt's sections must not leak into mini")
-	require.Less(t, len(built), 700, "mini's prompt must stay short: %d bytes", len(built))
+
+	// The session context is a single reminder line, the way the minimal
+	// presets this mirrors carry the working directory.
+	require.Contains(t, reminder, "<system-reminder>")
+	require.Contains(t, reminder, "Current working directory:")
+	require.Less(t, len(reminder), 300, "the reminder stays one line: %d bytes", len(reminder))
 }

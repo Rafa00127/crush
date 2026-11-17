@@ -26,6 +26,9 @@ var initializePromptTmpl []byte
 //go:embed templates/mini.md.tpl
 var miniPromptTmpl []byte
 
+//go:embed templates/mini_context.md.tpl
+var miniContextTmpl []byte
+
 func coderPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	opts = append(opts, prompt.WithReminderTemplate(string(contextReminderTmpl)))
 	systemPrompt, err := prompt.NewPrompt("coder", string(coderPromptTmpl), opts...)
@@ -35,11 +38,12 @@ func coderPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	return systemPrompt, nil
 }
 
-// miniPrompt is the whole system prompt of --mode mini: a short fixed persona
-// with no context reminder, no project instructions and no skill list. That is
-// the point of the mode — one tool, one short prompt — so nothing here should
-// grow into a policy document.
+// miniPrompt is the whole system prompt of --mode mini: one sentence, the way
+// the minimal presets this mirrors do it. Everything the agent needs to know
+// about its shell lives in that tool's description, and the session context is
+// a single reminder line, so nothing here should grow into a policy document.
 func miniPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
+	opts = append(opts, prompt.WithReminderTemplate(string(miniContextTmpl)))
 	systemPrompt, err := prompt.NewPrompt("mini", string(miniPromptTmpl), opts...)
 	if err != nil {
 		return nil, err

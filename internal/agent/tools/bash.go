@@ -210,7 +210,18 @@ func resolveBlockedCommands(perms *config.Permissions) []string {
 	return deduped
 }
 
-func bashDescription(attribution *config.Attribution, modelID string, blocked []string) string {
+//go:embed bash_mini.md
+var bashMiniDescription string
+
+func bashDescription(attribution *config.Attribution, modelID string, blocked []string, mini bool) string {
+	if mini {
+		// The minimal mode's whole bash contract: what the shell is, how to
+		// read files with it, and that long or dangerous commands have a
+		// different shape. The full description is several kilobytes of
+		// job, handoff and command-list detail, which is the opposite of
+		// what this mode is for.
+		return bashMiniDescription
+	}
 	var out bytes.Buffer
 	if err := bashDescriptionTpl.Execute(&out, bashDescriptionData{
 		BannedCommands:  strings.Join(blocked, ", "),
@@ -262,12 +273,12 @@ func blockFuncs(blocked []string) []shell.BlockFunc {
 	}
 }
 
-func NewBashTool(permissions permission.Service, workingDir, spillDir string, attribution *config.Attribution, modelID string, maxBackgroundJobs int, autoBackgroundAfter int, perms *config.Permissions) fantasy.AgentTool {
+func NewBashTool(permissions permission.Service, workingDir, spillDir string, attribution *config.Attribution, modelID string, maxBackgroundJobs int, autoBackgroundAfter int, miniMode bool, perms *config.Permissions) fantasy.AgentTool {
 	blocked := resolveBlockedCommands(perms)
 	userSafe := userSafeCommands(perms)
 	return fantasy.NewAgentTool(
 		BashToolName,
-		string(bashDescription(attribution, modelID, blocked)),
+		bashDescription(attribution, modelID, blocked, miniMode),
 		func(ctx context.Context, params BashParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Command == "" {
 				return fantasy.NewTextErrorResponse("missing command"), nil
