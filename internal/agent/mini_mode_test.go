@@ -18,7 +18,7 @@ func TestEffectiveToolNamesMiniKeepsOnlyTheShell(t *testing.T) {
 	dir := t.TempDir()
 	store, err := config.Init(t.Context(), dir, "", false)
 	require.NoError(t, err)
-	store.Overrides().Mini = true
+	store.Overrides().Mode = config.ModeMini
 
 	c := &coordinator{cfg: store, interactive: true}
 	agentCfg := config.Agent{
@@ -50,6 +50,23 @@ func TestEffectiveToolNamesMiniKeepsOnlyTheShell(t *testing.T) {
 		// decides what the top-level conversation can reach.
 		got := c.effectiveToolNames(agentCfg, true)
 		require.Contains(t, got, tools.ViewToolName)
+	})
+
+	t.Run("mini-mcp trims the same built-ins", func(t *testing.T) {
+		t.Parallel()
+		store.Overrides().Mode = config.ModeMiniMCP
+		t.Cleanup(func() { store.Overrides().Mode = config.ModeMini })
+
+		// The mode only adds MCP tools back, on top of the same list: the
+		// file toolset stays out because the shell covers it.
+		got := c.effectiveToolNames(agentCfg, false)
+		require.Equal(t, []string{
+			tools.BashToolName,
+			tools.ReadImageToolName,
+			tools.FetchToolName,
+			tools.WebSearchToolName,
+			tools.JobKillToolName,
+		}, got)
 	})
 }
 

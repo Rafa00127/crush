@@ -1148,7 +1148,14 @@ var miniToolNames = []string{
 
 // miniMode reports whether this coordinator runs the one-tool mode.
 func (c *coordinator) miniMode() bool {
-	return c.cfg != nil && c.cfg.Overrides() != nil && c.cfg.Overrides().Mini
+	return c.cfg != nil && c.cfg.Overrides().MiniMode()
+}
+
+// miniKeepsMCP reports whether the mini toolset still carries the MCP tools
+// (--mode mini-mcp). Their schemas are what mini drops, so this mode keeps
+// them on purpose and lets tool_search defer the parameters.
+func (c *coordinator) miniKeepsMCP() bool {
+	return c.cfg != nil && c.cfg.Overrides() != nil && c.cfg.Overrides().Mode == config.ModeMiniMCP
 }
 
 // buildTools builds an agent's tools. parentModel reports the model the
@@ -1271,8 +1278,8 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 
 	var mcpTools []*tools.Tool
 	// Mini mode is one shell: MCP tools would add back exactly the schemas
-	// the mode exists to drop.
-	if !c.miniMode() {
+	// the mode exists to drop. --mode mini-mcp keeps them on purpose.
+	if !c.miniMode() || c.miniKeepsMCP() {
 		for _, tool := range tools.GetMCPTools(c.permissions, c.cfg, c.cfg.WorkingDir()) {
 			if agent.AllowedMCP == nil {
 				// No MCP restrictions

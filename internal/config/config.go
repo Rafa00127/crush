@@ -495,6 +495,11 @@ type Options struct {
 	// for a job. 0, the default, disables waiting: a job's result is
 	// delivered when it finishes, so waiting only holds the turn.
 	JobOutputWait *int `json:"job_output_wait,omitempty" jsonschema:"description=Seconds job_output may block when wait=true, then it returns with the output so far. 0 disables waiting, which is the default because a finished job delivers its output by itself. Negative values are invalid.,default=0,example=15,example=30"`
+	// Mode is the tool mode a session starts with when --mode is not passed
+	// on the command line: empty for the full toolset, "mini" for the short
+	// fixed prompt with the shell as the only tool, or "mini-mcp" for the
+	// same plus the MCP servers' tools.
+	Mode string `json:"mode,omitempty" jsonschema:"description=Default tool mode when --mode is not given: empty for the full toolset\\, \\\"mini\\\" for a short fixed prompt with the shell as the only tool\\, or \\\"mini-mcp\\\" for the same plus the MCP servers' tools.,enum=,enum=mini,enum=mini-mcp,example=mini-mcp"`
 	// PinentryIntegrated renders GPG passphrase/PIN prompts as a native
 	// Crush dialog (loopback pinentry) instead of handing the terminal
 	// over to an external pinentry program. No GPG or git configuration

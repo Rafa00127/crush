@@ -57,14 +57,22 @@ type fileSnapshot struct {
 	ModTime int64 // UnixNano
 }
 
+// Tool modes for --mode. ModeFull is the default toolset.
+const (
+	ModeFull    = ""
+	ModeMini    = "mini"
+	ModeMiniMCP = "mini-mcp"
+)
+
 // RuntimeOverrides holds per-session settings that are never persisted to
 // disk. They are applied on top of the loaded Config and survive only for
 // the lifetime of the process (or workspace).
 type RuntimeOverrides struct {
 	PermissionMode permission.PermissionMode
-	// Mini selects the one-tool mode (--mode mini): a short fixed system
-	// prompt and the shell as the only way to touch the workspace.
-	Mini bool
+	// Mode selects the toolset: ModeFull, ModeMini (a short fixed system
+	// prompt with the shell as the only way to touch the workspace), or
+	// ModeMiniMCP (the same, plus the tools of the connected MCP servers).
+	Mode string
 	// EnabledChannels lists the MCP servers opted in as channels for this
 	// session (via the --channels flag). A server present in MCP config only
 	// pushes channel events when it also appears here. Entries may be written
@@ -267,6 +275,12 @@ func (s *ConfigStore) Overrides() *RuntimeOverrides {
 	s.writeMu.RLock()
 	defer s.writeMu.RUnlock()
 	return &s.overrides
+}
+
+// MiniMode reports whether the trimmed toolset and the short fixed prompt
+// are in use, which is every mode except ModeFull.
+func (o *RuntimeOverrides) MiniMode() bool {
+	return o != nil && o.Mode != ModeFull
 }
 
 // LoadedPaths returns the config file paths that were successfully loaded.

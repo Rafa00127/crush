@@ -296,26 +296,31 @@ git reset --hard backup/pre-sync-20261114
 
 ### 6.1 开关与组成
 
-`crush --mode mini`（`--mode` 只接受 `""` 和 `"mini"`，其他值直接报错；可叠加 `-y`/`-yy`/`--channels`）。
+`crush --mode mini`，或 `crush --mode mini-mcp`（`--mode` 只接受 `""` / `"mini"` / `"mini-mcp"`，其他值直接报错；可叠加 `-y`/`-yy`/`--channels`）。
 
-| 层 | mini |
-|---|---|
-| system | **一句**：`You are a helpful software engineer assistant.`（`templates/mini.md.tpl`） |
-| 会话上下文 | 一条 `<system-reminder>`，**只带 cwd**（`templates/mini_context.md.tpl`，走既有 reminder 机制，作为首条 user 消息，缓存稳定） |
-| 工具 | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（`coordinator.miniToolNames`）；MCP 一个不挂；plan agent 不受裁剪 |
-| bash 描述 | `tools/bash_mini.md`（约 700 字符）。完整版约 11.5KB，其中危险命令清单就占 ~1.7KB |
-| 上下文提醒 | 不进 AGENTS.md / 技能表（与 DSH minimal 一致） |
-| 权限 | 不改变，仍由 `-y` / `-yy` / 配置决定 |
+默认模式也可以写进配置：`options.mode`（全局或项目均可，值同上）。优先级：显式 `--mode` > `options.mode` > full；`--mode ""` 可显式回到完整模式。本机的全局配置现在是 `"mode": "mini-mcp"`。
+
+| 层 | mini | mini-mcp |
+|---|---|---|
+| system | **一句**：`You are a helpful software engineer assistant.`（`templates/mini.md.tpl`） | 同左 |
+| 会话上下文 | 一条 `<system-reminder>`，**只带 cwd**（`templates/mini_context.md.tpl`） | 同左 |
+| 工具 | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（`coordinator.miniToolNames`）；MCP 一个不挂 | 同左 **+ 所有 MCP 工具**（`tool_search` 按你配置的阈值把它们 schema 延后）；MCP server 正常启动 |
+| bash 描述 | `tools/bash_mini.md`（约 700 字符）。完整版约 11.5KB，其中危险命令清单就占 ~1.7KB | 同左 |
+| 上下文提醒 | 不进 AGENTS.md / 技能表（与 DSH minimal 一致） | 同左 |
+| 权限 | 不改变，仍由 `-y` / `-yy` / 配置决定 | 同左 |
+
+两个模式都不碰 plan agent（它的列表里没有 bash，裁了就无工具可用），子 agent 也不受影响。
 
 ### 6.2 新增/改动的文件
 
 - `internal/agent/templates/mini.md.tpl`、`mini_context.md.tpl`（新）
 - `internal/agent/prompts.go`：`miniPrompt()`，带极短 reminder 模板
-- `internal/agent/coordinator.go`：`miniMode()`、`miniToolNames`、`effectiveToolNames` 的 mini 分支（只裁 coder）、`buildTools` 跳过 MCP、system prompt 选择
-- `internal/app/app.go`：mini 下不 `ArmInit`、不 `mcp.Initialize`
+- `internal/agent/coordinator.go`：`miniMode()`、`miniKeepsMCP()`、`miniToolNames`、`effectiveToolNames` 的 mini 分支（只裁 coder）、`buildTools` 的 MCP 开关、system prompt 选择
+- `internal/app/app.go`：`--mode mini` 下不 `ArmInit`、不 `mcp.Initialize`（mini-mcp 照常启动）
 - `internal/agent/agent.go`：todos 提醒只在工具集真有 `todos` 时追加
-- `internal/config/store.go`：`RuntimeOverrides.Mini`
-- `internal/cmd/root.go`：`--mode` flag
+- `internal/config/store.go`：`RuntimeOverrides.Mode`（`ModeFull` / `ModeMini` / `ModeMiniMCP`）+ `MiniMode()`
+- `internal/config/config.go`：`Options.Mode`（`options.mode` 默认模式）+ `internal/shellconfig/options.go` 的 `option mode`
+- `internal/cmd/root.go`：`--mode` flag、取值校验、`--mode` > `options.mode` 的优先级
 - `internal/agent/tools/bash_mini.md`（新）与 `NewBashTool(..., miniMode)`：mini 用短描述
 - `internal/agent/tools/read_image.go` + `read_image.md`（新）：只吃图片的读取工具（PNG/JPEG/WebP/GIF、5MB、内容嗅探 MIME、工作区外仍走权限、模型不支持图片时明确提示），只挂在 mini
 - 测试：`internal/agent/mini_mode_test.go`、`internal/cmd/mode_flag_test.go`、`internal/agent/tools/read_image_test.go`、`TestBashToolMiniDescriptionIsShort`
@@ -347,6 +352,19 @@ git reset --hard backup/pre-sync-20261114
 | 工具 | `bash` + `read_image` + `working_directory` | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（cwd 由配置决定；联网给的是工具而不是放行 curl；job_kill 用来停自己起的后台作业） |
 | bash 描述 | ~595 字符 | ~700 字符 |
 | shell 持久性 | 持久（cd/export 跨调用） | **一次性**（每次新进程；提示词里明说用 `&&`） |
+| 固定 token（单请求） | 未测 | mini ≈ 1.2k；full ≈ 28k；mini-mcp ≈ 14k（详下） |
+
+**固定 token 预算（本机实测/推导，按 pwsh 12 个工具 + REA 203 个工具的配置，单位 token/请求）：**
+
+| 组成 | mini | mini-mcp | full |
+|---|---|---|---|
+| system prompt | 0.05k（47 B） | 0.05k | 1.4k（`coder.md.tpl` 5.3KB，渲染后更大） |
+| 会话上下文 | 0.06k（只有 cwd） | 0.06k | ~4k（AGENTS.md 11.9KB ≈ 3k + 12 个技能表 ≈ 0.8k + env/git） |
+| 内置工具 schema | 5 个 ≈ 1k | 5 个 ≈ 1k | 35 个 ≈ 8.5k（描述 26.5KB，含 bash 渲染后的 11.5KB） |
+| MCP | 0 | ≈ 13k | ≈ 13k |
+| **合计** | **≈ 1.2k** | **≈ 14k** | **≈ 28k** |
+
+MCP 那 13k 的算法：REA 203 个被 `tool_search` 压成“名字 + 首句 ≤200 字符 + `[params: tool_search]`”，约 203×230B ≈ 47KB ≈ 12k；pwsh 因为 `tool_search.always_load` 是完整 schema ≈ 1k；再加 `tool_search` 自身与两段 MCP instructions ≈ 1k。所以 **mini-mcp ≈ full 的一半，但比 mini 贵十倍以上**，差价全在 MCP。想再压：`always_load` 去掉 `pwsh`，或用 `disabled` 只留一个 server——REA 那 203 个即使全是 stub 也是 12k。
 
 ### 6.5 明确不做的：持久 shell
 
@@ -355,6 +373,8 @@ git reset --hard backup/pre-sync-20261114
 ### 6.6 缓存注意
 
 切模式、切模型、压缩都会让前缀缓存整体失效（改的是前缀最前面的 system/tools）。mini 内部稳定；因此**任何每轮变化的东西**（当前时间、实时 git 状态、作业摘要）都不能进 system prompt / context reminder / 工具描述，只能放在历史尾部或以工具结果形式送达。
+
+具体到“同一个 session 先 `mini-mcp` 后 `full`（换 `--mode` 重启并 `-s` 恢复）”：**缓存全掉**，不是掉一部分。缓存匹配的是最长公共前缀，而 system prompt 与工具列表在请求最前面，第一个字节就不同了，所以连历史一起按未命中重算；那一次请求按全价（+ 缓存写入价）付整段前缀 + 全部历史，之后按新前缀重新缓存。切回 `mini-mcp` 若旧缓存还没过期（DeepSeek 约几分钟到几小时），能命中旧的；过期了同样重算。所以别在长会话里反复切模式，一次切换的代价 ≈ 该会话已有上下文的全部输入价。
 
 ### 6.7 提示词卫生：只说存在的工具
 

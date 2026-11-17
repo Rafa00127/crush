@@ -196,14 +196,15 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		slog.Warn("Clipboard initialization failed", "error", err)
 	}
 
-	// mini mode never calls an MCP tool, so its servers are left off: no
+	// --mode mini never calls an MCP tool, so its servers are left off: no
 	// startup cost, and no instructions for tools nothing can call. Without
 	// ArmInit the init gate stays closed, so nothing waits for them either.
-	miniMode := store.Overrides().Mini
+	// --mode mini-mcp keeps them, since it attaches their tools.
+	mcpOff := store.Overrides().Mode == config.ModeMini
 	// Arm initialization synchronously before launching it so WaitForInit
 	// blocks for the in-flight init instead of racing the goroutine and
 	// returning before any MCP tools register.
-	if !miniMode {
+	if !mcpOff {
 		mcp.ArmInit()
 	}
 	// Config-disabled servers the user enabled via Toggle MCPs have a
@@ -224,7 +225,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	if err != nil {
 		slog.Warn("Failed to list disabled MCP overrides; starting them anyway", "error", err)
 	}
-	if !miniMode {
+	if !mcpOff {
 		go mcp.Initialize(ctx, app.Permissions, store, forceStart, localDisabled)
 	}
 
