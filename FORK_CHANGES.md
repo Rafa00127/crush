@@ -343,6 +343,16 @@ git reset --hard backup/pre-sync-20261114
   放在全局而不是仓库配置里，换工作目录（例如 `CrushChat`）也生效。三段 PATH 的顺序各有原因：`ucrt64/bin` 在首位才能用上 g++ 16.2；`PortableGit/cmd` 只含 `git`/`gitk`/`scalar`/`tig`，让 `git` 用 Windows 版（有 `user.name`、有 GCM 凭据；`git.exe` 会把自己的 `mingw64/bin` 塞给子进程，所以不必把 `mingw64/bin` 写进 PATH，否则 curl/openssl/xz 等一大票都会被前置）；`usr/bin` 保持 msys coreutils 与 `sh`（hooks 用的是 `sh`）。`HOME` 必须指到 `<Windows 用户目录>`，否则 msys bash 的 `HOME=/home/A`，git 读不到 `.gitconfig`（提交报身份未知、push 卡在用户名提示），`${HOME}/.config/crush/hooks/*.sh` 这些 hook 路径也会指错。
 - 注意：PATH 上的 `bash` 在 Windows 通常是 WSL，路径是 `/mnt/d/...`；msys 是 `/d/...`，两者不能混用。
 
+### 6.3.1 REA 只挂 28 个工具（`mcp.<server>.enabled_tools`）
+
+REA 注册 207 个工具；全挂时即使 `tool_search` 把 schema 延后、只发“名字 + 首句”，固定开销也有约 12k token/请求（见 6.4 表）。所以全局 `~/.config/crush/crush.json` 里给了 `mcp.rea.enabled_tools` 一个**允许清单**，只留本机 46 个 session DB 里实际用过的 28 个（并集：Galgame_AI 22、MakePortableAppsAndGameCheat 15、reverse 7、恶之女干部满月之月 11、my_fork 2、videoFix 2），开销降到约 1.6k。
+
+- **代码不用改**：`MCPConfig.EnabledTools` 早就存在，`tools.go:filterTools` 先按它过滤，再减 `disabled_tools`；`mcpConfigEqual` 也已把它算进“要不要重启 client”的比较。
+- **为什么用允许清单而不是禁用清单**：跨配置文件的数组是**追加**（见 6.3 的 shell_env）。允许清单意味着“全局收紧、某项目追加放开”天然可用；禁用清单做不到——项目无法取消全局的禁用项。
+- **按项目加**：在项目的 `.crush.json` 里写 `"mcp": {"rea": {"enabled_tools": ["额外工具名"]}}`，会叠加在全局 28 个之上。短名（`xrefs`），不是 `mcp__rea__xrefs`。
+- **副作用**：REA 升级新增的工具默认不可见，需要时手动加。工具真实名字用 `node ~/.config/crush/skills/rea-token-budget/scripts/list-tools.mjs [关键词]` 枚举（MCP 握手拿到的表，207 个），说明见同名 skill。
+
+
 ### 6.4 与 DSH minimal 的对照
 
 | | DSH minimal | 本 fork mini |
