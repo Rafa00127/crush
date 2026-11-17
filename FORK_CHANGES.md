@@ -42,7 +42,7 @@ git status --short && git diff --stat        # 在途改动
 | 重定向输出检测 | `internal/agent/tools/bash.go` | 命令写日志文件时作业永远是 `no output`；用 mvdan 解析器只看**最后一条顶层语句**的重定向，并点名日志文件 |
 | 重定向命令 2s 交棒 | 同上（`RedirectedOutputGrace`） | 输出不可能到达我们这边，等满阈值没有意义 |
 | 默认交棒阈值 60s → 15s | 同上 + `internal/config/config.go` + `internal/shellconfig/options.go` | 让对话尽早空出来；新增 `option auto-background-after N` / `options.auto_background_after` |
-| 外部 bash 执行器 | `internal/shell/shell.go`、`background.go`、`internal/config/config.go`、`internal/shellconfig/options.go` | `options.bash_path` 命中时命令交给那个 bash（`-c`）执行，替代内建解释器：`WaitDelay`、退出码、流式输出契约不变。Windows 上这是让 msys2 可用的唯一方式（PATH 上的 `bash` 通常是 WSL）。`options.shell_env` 提供额外环境变量，值支持 `$VAR`/`%VAR%` 展开（`PATH=<msys>/usr/bin;$PATH`） |
+| 外部 bash 执行器 | `internal/shell/shell.go`、`background.go`、`internal/config/config.go`、`internal/shellconfig/options.go` | `options.bash_path` 命中时命令交给那个 bash（`-c`）执行，替代内建解释器：`WaitDelay`、退出码、流式输出契约不变。Windows 上这是让 msys2 可用的唯一方式（PATH 上的 `bash` 通常是 WSL）。`options.shell_env` 提供额外环境变量，值支持 `$VAR`/`%VAR%` 展开（`PATH=<bash 所在目录>;$PATH`） |
 | 交棒文案 | `bash.go`、`bash.md.tpl`、`job_output.md` | 明确告诉模型"已转后台、输出还在、你可以继续聊"，并说明如何回头看结果 |
 
 **有意保留的取舍**：Windows 侧不做进程树击杀（没有 Job Object，`job_kill` 只终止
@@ -304,7 +304,7 @@ git reset --hard backup/pre-sync-20261114
 |---|---|---|
 | system | **一句**：`You are a helpful software engineer assistant.`（`templates/mini.md.tpl`） | 同左 |
 | 会话上下文 | 一条 `<system-reminder>`，**只带 cwd**（`templates/mini_context.md.tpl`） | 同左 |
-| 工具 | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（`coordinator.miniToolNames`）；MCP 一个不挂 | 同左 **+ 所有 MCP 工具**（`tool_search` 按你配置的阈值把它们 schema 延后）；MCP server 正常启动 |
+| 工具 | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（`coordinator.miniToolNames`）；MCP 一个不挂 | 同左 **+ `read`/`edit`/`write`/`job_output`**（`miniMCPToolNames`：diff 预览、编辑后 LSP 诊断、省 token 的带行号读取、可回读的后台作业——shell 都替代不了）+ **所有 MCP 工具**（`tool_search` 按你配置的阈值把它们 schema 延后）；MCP server 正常启动。`grep`/`glob`/`ls`/`todos` 仍不加：shell 做得一样好 |
 | bash 描述 | `tools/bash_mini.md`（约 700 字符）。完整版约 11.5KB，其中危险命令清单就占 ~1.7KB | 同左 |
 | 上下文提醒 | 不进 AGENTS.md / 技能表（与 DSH minimal 一致） | 同左 |
 | 权限 | 不改变，仍由 `-y` / `-yy` / 配置决定 | 同左 |
@@ -329,29 +329,29 @@ git reset --hard backup/pre-sync-20261114
 
 - `options.bash_path`：命中时 shell 层用 `<bash> -c "<command>"` 执行，替代内建 mvdan 解释器；`WaitDelay`、退出码、流式输出、作业模型全部不变。没设就退回解释器。
 - `options.shell_env`：`KEY=VALUE` 列表，值支持 `$VAR` / `%VAR%`；**`PATH` 是前置语义**（自动拼上继承的 PATH，不需要写 `$PATH`）；覆盖同名变量时按大小写不敏感剔除继承项（Windows 拼作 `Path`）。
-- 本机配置写进**全局** `~/.config/crush/crush.json`：
-
-  ```json
-  "bash_path": "<msys>/usr/bin/bash.exe",
-  "shell_env": [
-      "PATH=<msys>/ucrt64/bin;<git cmd>;<msys>/usr/bin",
-      "MSYSTEM=MSYS",
-      "HOME=<Windows 用户目录>"
-  ]
-  ```
-
-  放在全局而不是仓库配置里，换工作目录（例如 `CrushChat`）也生效。三段 PATH 的顺序各有原因：`ucrt64/bin` 在首位才能用上 g++ 16.2；`PortableGit/cmd` 只含 `git`/`gitk`/`scalar`/`tig`，让 `git` 用 Windows 版（有 `user.name`、有 GCM 凭据；`git.exe` 会把自己的 `mingw64/bin` 塞给子进程，所以不必把 `mingw64/bin` 写进 PATH，否则 curl/openssl/xz 等一大票都会被前置）；`usr/bin` 保持 msys coreutils 与 `sh`（hooks 用的是 `sh`）。`HOME` 必须指到 `<Windows 用户目录>`，否则 msys bash 的 `HOME=/home/A`，git 读不到 `.gitconfig`（提交报身份未知、push 卡在用户名提示），`${HOME}/.config/crush/hooks/*.sh` 这些 hook 路径也会指错。
-- 注意：PATH 上的 `bash` 在 Windows 通常是 WSL，路径是 `/mnt/d/...`；msys 是 `/d/...`，两者不能混用。
+- 本机实际取值（msys 路径、PortableGit、`HOME`、`/tmp` 的 fstab 挂载）记在 **`LOCAL_SETUP.md`**——那个文件与
+  `FORK_MAINTENANCE.md` 一样**不进 git**（里面有机器路径）。这里只留可复用的结论：
+  - `bash_path` 写 bash 二进制的**绝对路径**。PATH 上的 `bash` 在 Windows 上通常是 WSL，路径是 `/mnt/c/...`，
+    和 msys 的 `/c/...` 语义不同，不能混用。
+  - `shell_env` 的 `PATH` 是**前置**语义，顺序有讲究：编译器所在目录放最前；想让 `git` 用 Windows 版就把它的
+    `cmd` 目录放在 msys 之前（msys 自带 git 没有 credential helper，push 会卡在用户名提示），但**只放 `cmd`**
+    （里面只有 `git`/`gitk`/`scalar`/`tig`），别放 `mingw64/bin`，否则 `curl`/`openssl`/`xz` 一大票都被前置；
+    `usr/bin` 放最后保住 coreutils 与 `sh`（hooks 用的是 `sh`）。
+  - `HOME` 要显式指到 Windows 用户目录：msys bash 默认是 `HOME=/home/<user>`，git 因此读不到 `.gitconfig`
+    （提交报身份未知、push 卡在用户名提示），`${HOME}/.config/crush/hooks/*.sh` 这类 hook 路径也会指错。
+  - msys 的 `/tmp` 默认在安装目录下，与 `%TEMP%` 是两个地方；在 `/etc/fstab` 里把它挂到系统 temp，
+    两个 shell 的临时文件就互通了，旧的临时目录可以留着当历史。
+- 以上配置写在**全局**配置里而不是仓库里：换工作目录也生效，也不会跟着仓库同步被覆盖。
 
 ### 6.3.1 REA 只挂 28 个工具（`mcp.<server>.enabled_tools`）
 
-REA 注册 207 个工具；全挂时即使 `tool_search` 把 schema 延后、只发“名字 + 首句”，固定开销也有约 12k token/请求（见 6.4 表）。所以全局 `~/.config/crush/crush.json` 里给了 `mcp.rea.enabled_tools` 一个**允许清单**，只留本机 46 个 session DB 里实际用过的 28 个（并集：Galgame_AI 22、MakePortableAppsAndGameCheat 15、reverse 7、恶之女干部满月之月 11、my_fork 2、videoFix 2），开销降到约 1.6k。
+REA 注册 255 个工具（6.9.0；6.7 时是 207）；全挂时即使 `tool_search` 把 schema 延后、只发“名字 + 首句”，固定开销也有约 12k token/请求（见 6.4 表）。所以全局 `~/.config/crush/crush.json` 里给了 `mcp.rea.enabled_tools` 一个**允许清单**，只留本机 46 个 session DB 里实际用过的 28 个（并集：Galgame_AI 22、MakePortableAppsAndGameCheat 15、reverse 7、恶之女干部满月之月 11、my_fork 2、videoFix 2），开销降到约 1.6k。
 
 - **代码不用改**：`MCPConfig.EnabledTools` 早就存在，`tools.go:filterTools` 先按它过滤，再减 `disabled_tools`；`mcpConfigEqual` 也已把它算进“要不要重启 client”的比较。
 - **为什么用允许清单而不是禁用清单**：跨配置文件的数组是**追加**（见 6.3 的 shell_env）。允许清单意味着“全局收紧、某项目追加放开”天然可用；禁用清单做不到——项目无法取消全局的禁用项。
 - **按项目加**：在项目的 `.crush.json` 里写 `"mcp": {"rea": {"enabled_tools": ["额外工具名"]}}`，会叠加在全局 28 个之上。短名（`xrefs`），不是 `mcp__rea__xrefs`。
 - **副作用**：REA 升级新增的工具默认不可见，需要时手动加。工具真实名字用 `node ~/.config/crush/skills/rea-token-budget/scripts/list-tools.mjs [关键词]` 枚举（MCP 握手拿到的表），说明见同名 skill。
-- **2026-11-17 升级到 6.9.0**：工具数 207 → **255**，28 个白名单名字全部仍存在（升级后实测）。前置条件是把本机 Node 从 24.19.0 换到 **24.22.1**（REA 6.8+ 要求 `^22.23.4 || ^24.22.1 || >=26.12.1`）。换法是官方 win-x64 zip 覆盖绿色版目录 `<本机路径>\NodeJS`（该目录 ACL 只给普通用户 ReadAndExecute，需要在管理员控制台里改名+替换）；旧目录留作 `NodeJS.bak-<时间戳>`。npm 的全局前缀原本写在旧版 `node_modules/npm/npmrc`（`prefix=${APPDATA}\npm`），换本体后改用 `~/.npmrc` 里的 `prefix=<Windows 用户目录>\AppData\Roaming\npm` 保持原行为。
+- **2026-11-17 升级到 6.9.0**：工具数 207 → **255**，28 个白名单名字全部仍存在（升级后实测）。前置条件是把本机 Node 从 24.19.0 换到 **24.22.1**（REA 6.8+ 要求 `^22.23.4 || ^24.22.1 || >=26.12.1`）。换法是官方 win-x64 zip 覆盖绿色版 Node 目录（该目录的 ACL 只给普通用户 ReadAndExecute，需要在管理员控制台里改名+替换）；旧目录留作 `NodeJS.bak-<时间戳>`。npm 的全局前缀原本写在旧版 `node_modules/npm/npmrc`（`prefix=${APPDATA}\npm`），换本体后改用 `~/.npmrc` 里的 `prefix=%APPDATA%\npm` 保持原行为。
 - 6.9.0 的默认值变化会影响调用写法：`analyze_function` 默认只回 retained summary（要全文传 `detail: "complete"`），MCP 输入 schema 默认紧凑，`close_binary` 保留记录（释放用 `reset_investigation`），单次数组/对象元素上限 1024。
 
 
@@ -364,19 +364,24 @@ REA 注册 207 个工具；全挂时即使 `tool_search` 把 schema 延后、只
 | 工具 | `bash` + `read_image` + `working_directory` | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（cwd 由配置决定；联网给的是工具而不是放行 curl；job_kill 用来停自己起的后台作业） |
 | bash 描述 | ~595 字符 | ~700 字符 |
 | shell 持久性 | 持久（cd/export 跨调用） | **一次性**（每次新进程；提示词里明说用 `&&`） |
-| 固定 token（单请求） | 未测 | mini ≈ 1.2k；full ≈ 28k；mini-mcp ≈ 14k（详下） |
+| 固定 token（单请求） | 未测 | mini ≈ 1.2k；mini-mcp ≈ 6.5k；full ≈ 18k（详下） |
 
-**固定 token 预算（本机实测/推导，按 pwsh 12 个工具 + REA 203 个工具的配置，单位 token/请求）：**
+**固定 token 预算（单位 token/请求；内置工具按 `.md`/`.md.tpl` 实测描述字节 ÷4，再按 schema 约 +60% 估；pwsh 与 MCP instructions 是估值，无法直接测请求）**
 
 | 组成 | mini | mini-mcp | full |
 |---|---|---|---|
-| system prompt | 0.05k（47 B） | 0.05k | 1.4k（`coder.md.tpl` 5.3KB，渲染后更大） |
+| system prompt（含 `<mcp-instructions>`） | 0.05k（47 B，无 MCP） | ~0.5k（一句 + pwsh/REA 两段 instructions） | ~2k（`coder.md.tpl` 5.3KB 渲染后 ~1.4k + instructions ~0.5k） |
 | 会话上下文 | 0.06k（只有 cwd） | 0.06k | ~4k（AGENTS.md 11.9KB ≈ 3k + 12 个技能表 ≈ 0.8k + env/git） |
-| 内置工具 schema | 5 个 ≈ 1k | 5 个 ≈ 1k | 35 个 ≈ 8.5k（描述 26.5KB，含 bash 渲染后的 11.5KB） |
-| MCP | 0 | ≈ 13k | ≈ 13k |
-| **合计** | **≈ 1.2k** | **≈ 14k** | **≈ 28k** |
+| 内置工具 | 5 个 ≈ 1.1k（描述 2.5KB） | 9 个 ≈ 2.2k（描述 5.9KB） | 35 个 ≈ 8.5k（描述 26.5KB，含 bash 渲染后的 11.5KB） |
+| MCP | 0 | ~3.7k（pwsh 5 个 ≈1.9k + REA 28 个 ≈1.8k） | ~3.7k |
+| **合计** | **≈ 1.2k** | **≈ 6.5k** | **≈ 18k** |
 
-MCP 那 13k 的算法：REA 203 个被 `tool_search` 压成“名字 + 首句 ≤200 字符 + `[params: tool_search]`”，约 203×230B ≈ 47KB ≈ 12k；pwsh 因为 `tool_search.always_load` 是完整 schema ≈ 1k；再加 `tool_search` 自身与两段 MCP instructions ≈ 1k。所以 **mini-mcp ≈ full 的一半，但比 mini 贵十倍以上**，差价全在 MCP。想再压：`always_load` 去掉 `pwsh`，或用 `disabled` 只留一个 server——REA 那 203 个即使全是 stub 也是 12k。
+MCP 那 ~3.7k 的构成（摸过 MCP 握手实测，不是估的）：REA **白名单 28 个**被 `tool_search` 压成“名字 + 首句 ≤200 字符 + `[params: tool_search]`”，约 28×230B ≈ 6.4KB ≈ 1.6k；pwsh 因为 `tool_search.always_load` 是完整 schema，**12 个共 18220 B ≈ 4.55k**（`execute_command` 一个就 4185 B），关掉 6 个远端控制 + `get_current_location` 后剩 5 个 ≈ 1.9k。所以 6.5k 这一列是**已经做完 pwsh 裁剪**的数；不裁的话 mini-mcp 是 ≈9.1k。
+
+> 早先版本的表写 full ≈ 28k / mini-mcp ≈ 14k，那是 REA **203 个工具全挂**时的数（stub 就 12k）。白名单缩到 28 个、pwsh 裁到 5 个之后，MCP 只占 3.7k，两行都要按上表重算。想再压：把 `pwsh` 从 `always_load` 拿掉（省 ≈1.6k，代价是每次用前多一次 `tool_search`），或继续裁 REA 白名单（每裁 10 个省约 0.6k）。
+
+这台机器上这些配置项的**当前取值与验证命令**记在 [LOCAL_SETUP.md](LOCAL_SETUP.md)（AGENTS.md 里已引用）。
+
 
 ### 6.5 明确不做的：持久 shell
 

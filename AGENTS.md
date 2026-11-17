@@ -24,6 +24,12 @@ read [FORK_CHANGES.md](FORK_CHANGES.md): it lists every local divergence from
 `FORK_MAINTENANCE.md` is not tracked by git; upstream sync steps also live in the
 `fork-maintenance` skill.
 
+This machine's own setup — the msys bash / git / g++ PATH order, the portable Node,
+the REA and PowerShell.MCP tool allow lists, `options.mode`, and the per-request
+token budget of each mode — is in LOCAL_SETUP.md (@LOCAL_SETUP.md). It holds machine
+paths, so like `FORK_MAINTENANCE.md` it is **not tracked by git**. Read it before
+touching any machine-specific config or explaining why a tool is missing.
+
 ## Architecture
 
 ```

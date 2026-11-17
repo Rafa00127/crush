@@ -52,13 +52,14 @@ func TestEffectiveToolNamesMiniKeepsOnlyTheShell(t *testing.T) {
 		require.Contains(t, got, tools.ViewToolName)
 	})
 
-	t.Run("mini-mcp trims the same built-ins", func(t *testing.T) {
+	t.Run("mini-mcp adds the tools a shell cannot replace", func(t *testing.T) {
 		t.Parallel()
 		store.Overrides().Mode = config.ModeMiniMCP
 		t.Cleanup(func() { store.Overrides().Mode = config.ModeMini })
 
-		// The mode only adds MCP tools back, on top of the same list: the
-		// file toolset stays out because the shell covers it.
+		// Same five, plus the file tools whose diff preview, diagnostics and
+		// line-numbered reads a shell cannot reproduce. grep/glob/ls stay
+		// out: the shell does those as well or better.
 		got := c.effectiveToolNames(agentCfg, false)
 		require.Equal(t, []string{
 			tools.BashToolName,
@@ -66,6 +67,10 @@ func TestEffectiveToolNamesMiniKeepsOnlyTheShell(t *testing.T) {
 			tools.FetchToolName,
 			tools.WebSearchToolName,
 			tools.JobKillToolName,
+			tools.ViewToolName,
+			tools.EditToolName,
+			tools.WriteToolName,
+			tools.JobOutputToolName,
 		}, got)
 	})
 }

@@ -1110,11 +1110,16 @@ func (c *coordinator) effectiveToolNames(agentCfg config.Agent, isSubAgent bool)
 	if c.miniMode() && !isSubAgent && agentCfg.ID == config.AgentCoder {
 		// The mode's own list, not the coder's: it drops the whole file
 		// toolset (the shell replaces it) but keeps read_image, which a
-		// shell cannot do. Only the coder: the plan agent's list has no
-		// shell at all, so trimming it would leave plan mode with no tools
-		// to explore with.
-		out := make([]string, 0, len(miniToolNames))
-		for _, name := range miniToolNames {
+		// shell cannot do. mini-mcp adds the four tools a shell cannot
+		// reproduce either -- see miniMCPToolNames. Only the coder: the
+		// plan agent's list has no shell at all, so trimming it would
+		// leave plan mode with no tools to explore with.
+		want := miniToolNames
+		if c.miniKeepsMCP() {
+			want = append(slices.Clone(miniToolNames), miniMCPToolNames...)
+		}
+		out := make([]string, 0, len(want))
+		for _, name := range want {
 			if !slices.Contains(c.cfg.Config().Options.DisabledTools, name) {
 				out = append(out, name)
 			}
@@ -1144,6 +1149,18 @@ var miniToolNames = []string{
 	tools.FetchToolName,
 	tools.WebSearchToolName,
 	tools.JobKillToolName,
+}
+
+// miniMCPToolNames is what --mode mini-mcp adds on top of mini, once there is
+// a bigger toolset anyway. Each one covers something the shell cannot: an edit
+// shows its diff before it lands and reports LSP diagnostics after, a read
+// costs fewer tokens than dumping the file, and job_output makes the shell's
+// backgrounding observable instead of fire-and-forget.
+var miniMCPToolNames = []string{
+	tools.ViewToolName,
+	tools.EditToolName,
+	tools.WriteToolName,
+	tools.JobOutputToolName,
 }
 
 // miniMode reports whether this coordinator runs the one-tool mode.

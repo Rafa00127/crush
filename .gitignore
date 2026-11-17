@@ -58,5 +58,6 @@ completions/crush.*sh
 # Fork-local analysis notes and screenshots
 DSH_PARITY.md
 FORK_MAINTENANCE.md
+LOCAL_SETUP.md
 /*.png
 /docs-site

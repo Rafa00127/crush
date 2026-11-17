@@ -3,7 +3,7 @@
 ## 本地编译与部署
 
 分支 `local/dshlike` 的本地构建产物固定为仓库根目录的 `crush-dshlike.exe`，
-部署目标是 PATH 上的 `<部署目录>\crush.exe`。
+部署目标是 PATH 上的 `crush.exe`（本机具体路径见 `LOCAL_SETUP.md`）。
 
 环境变量沿用 `Taskfile.yaml` 的全局设置（`CGO_ENABLED=0`、
 `GOEXPERIMENT=greenteagc`），并且按 `.goreleaser.yml` 的 release 参数构建：加 `-trimpath`，
@@ -38,7 +38,7 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 if (Get-Process crush -ErrorAction SilentlyContinue) {
     Rename-Item -LiteralPath '.\crush.exe' -NewName "crush.exe.bak-$stamp" -Force
 }
-Copy-Item -LiteralPath '<fork 仓库目录>\crush-dshlike.exe' -Destination '.\crush.exe' -Force
+Copy-Item -LiteralPath '<仓库目录>\crush-dshlike.exe' -Destination '.\crush.exe' -Force
 & .\crush.exe --version
 Get-ChildItem -Filter 'crush*.exe*' | Select-Object Name,Length,LastWriteTime
 ```
