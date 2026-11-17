@@ -24,9 +24,9 @@
 
 | 模式 | system prompt | 内置工具 | MCP | 固定开销（每请求，参考值） |
 |---|---|---|---|---|
-| `--mode ""`（full） | coder 提示词 + 仓库上下文/技能表 | 35 个 | 挂 | ≈18k token |
+| `--mode ""`（full） | coder 提示词 + 仓库上下文/技能表 | 35 个 | 挂 | ≈20k token |
 | `--mode mini` | 一句 + cwd | 5 个 | 不启动 | ≈1.2k |
-| `--mode mini-mcp` | 一句 + cwd + MCP instructions | 9 个（+`read`/`edit`/`write`/`job_output`） | 挂 | ≈6.5k（示例 MCP 裁剪后） |
+| `--mode mini-mcp` | 一句 + cwd + MCP instructions | 9 个（+`read`/`edit`/`write`/`job_output`） | 挂 | ≈8k（示例 MCP 裁剪后） |
 
 mini-mcp 加回来那 4 个工具的理由：diff 预览、编辑后 LSP 诊断、带行号的读取、可回读的后台作业——shell 替代不了。
 `grep`/`glob`/`ls`/`todos` 不加：shell 做得一样好。
@@ -108,7 +108,7 @@ mini-mcp 加回来那 4 个工具的理由：diff 预览、编辑后 LSP 诊断�
 - **提权**：这个 server 本身不提升权限；用户自己开一个「以管理员身份运行」的 PowerShell 7 并
   `Import-Module PowerShell.MCP`，命令就会落到那个提权窗口里执行。
 
-推荐配置（12 个工具里只留 5 个，`≈4.5k → 1.9k token/请求`）：
+推荐配置（12 个工具里只留 5 个：工具 schema `4.55k → 2.35k`，另有 server instructions 1.1k）：
 
 ```jsonc
 "pwsh": {
@@ -151,7 +151,7 @@ mini-mcp 加回来那 4 个工具的理由：diff 预览、编辑后 LSP 诊断�
 "rea": { "type": "stdio", "command": "npx", "args": ["-y", "rea-agents@6.9.0", "mcp"], "timeout": 120 }
 ```
 
-推荐白名单（255 个工具里只留 28 个，`≈12k → 1.8k token/请求`）。这 28 个是"实际用过"的并集，
+推荐白名单（255 个工具里只留 28 个：stub `1.2k` + instructions `0.65k`；全挂时约 12k）。这 28 个是"实际用过"的并集，
 够做常见的 PE/ELF 静态分析 + Frida 动态观测 + Electron 检查；不用的场景再往下删：
 
 ```jsonc
@@ -183,7 +183,7 @@ mini-mcp 加回来那 4 个工具的理由：diff 预览、编辑后 LSP 诊断�
 - 静态分析里 `xrefs`、`procedure_pseudo_code`、`resolve_containing_procedure`、`search_strings` 是主力，
   `list_procedures`/`list_strings` 这类"全量列举"在大型 PE 上一次几十万行，**故意不放**，用 `search_*` 代替。
 - 需要新工具时先枚举真实名字再往 `enabled_tools` 里加（见 §6、§7），别凭印象写。
-- 数一下成本：这个列表每多 10 个工具，每请求大约 +0.6k token。
+- 数一下成本：实测每个 stub 约 171 B ≈ 43 token，所以每多 10 个工具约 +0.43k token。
 
 - 需要 **Node ≥ 24.22.1**（6.8+ 的硬要求），装分析引擎后加 env：
   `"env": { "GHIDRA_INSTALL_DIR": "<ghidra 目录>", "JAVA_HOME": "<jdk 目录>" }`。
@@ -207,8 +207,9 @@ mini-mcp 加回来那 4 个工具的理由：diff 预览、编辑后 LSP 诊断�
 实测参考（同一台机器，单位 token/请求）：
 
 - REA 255 个工具**全挂** ≈12k；`tool_search` 压过之后仍是这个量级（摘要按 200 字符封顶）。
-- 改成 `enabled_tools` 只留常用的 28 个 ≈1.8k。
-- pwsh 12 个工具**常驻**（在 `always_load` 里）≈4.5k；裁到 5 个 ≈1.9k。
+- 改成 `enabled_tools` 只留常用的 28 个：stub ≈1.2k。
+- pwsh 12 个工具**常驻**（在 `always_load` 里）≈4.55k；裁到 5 个 ≈2.35k。
+- 两个 server 的 **MCP instructions** 是另一笔开销：REA 2.6KB ≈0.65k、pwsh 4.4KB ≈1.1k——工具关了说明还在。
 
 因为数组是追加的，`enabled_tools` 可以让"全局只留常用、个别项目追加放开"：
 

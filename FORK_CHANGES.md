@@ -364,7 +364,7 @@ REA 注册 255 个工具（6.9.0；6.7 时是 207）；全挂时即使 `tool_sea
 | 工具 | `bash` + `read_image` + `working_directory` | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（cwd 由配置决定；联网给的是工具而不是放行 curl；job_kill 用来停自己起的后台作业） |
 | bash 描述 | ~595 字符 | ~700 字符 |
 | shell 持久性 | 持久（cd/export 跨调用） | **一次性**（每次新进程；提示词里明说用 `&&`） |
-| 固定 token（单请求） | 未测 | mini ≈ 1.2k；mini-mcp ≈ 6.5k；full ≈ 18k（详下） |
+| 固定 token（单请求） | 未测 | mini ≈ 1.2k；mini-mcp ≈ 8k；full ≈ 20k（详下） |
 
 **固定 token 预算（单位 token/请求；内置工具按 `.md`/`.md.tpl` 实测描述字节 ÷4，再按 schema 约 +60% 估；pwsh 与 MCP instructions 是估值，无法直接测请求）**
 
@@ -373,12 +373,12 @@ REA 注册 255 个工具（6.9.0；6.7 时是 207）；全挂时即使 `tool_sea
 | system prompt（含 `<mcp-instructions>`） | 0.05k（47 B，无 MCP） | ~0.5k（一句 + pwsh/REA 两段 instructions） | ~2k（`coder.md.tpl` 5.3KB 渲染后 ~1.4k + instructions ~0.5k） |
 | 会话上下文 | 0.06k（只有 cwd） | 0.06k | ~4k（AGENTS.md 11.9KB ≈ 3k + 12 个技能表 ≈ 0.8k + env/git） |
 | 内置工具 | 5 个 ≈ 1.1k（描述 2.5KB） | 9 个 ≈ 2.2k（描述 5.9KB） | 35 个 ≈ 8.5k（描述 26.5KB，含 bash 渲染后的 11.5KB） |
-| MCP | 0 | ~3.7k（pwsh 5 个 ≈1.9k + REA 28 个 ≈1.8k） | ~3.7k |
-| **合计** | **≈ 1.2k** | **≈ 6.5k** | **≈ 18k** |
+| MCP | 0 | ~5.3k（pwsh 5 个 schema 2.35k + REA 28 个 stub 1.2k + 两段 instructions 1.75k） | ~5.3k |
+| **合计** | **≈ 1.2k** | **≈ 8k** | **≈ 20k** |
 
-MCP 那 ~3.7k 的构成（摸过 MCP 握手实测，不是估的）：REA **白名单 28 个**被 `tool_search` 压成“名字 + 首句 ≤200 字符 + `[params: tool_search]`”，约 28×230B ≈ 6.4KB ≈ 1.6k；pwsh 因为 `tool_search.always_load` 是完整 schema，**12 个共 18220 B ≈ 4.55k**（`execute_command` 一个就 4185 B），关掉 6 个远端控制 + `get_current_location` 后剩 5 个 ≈ 1.9k。所以 6.5k 这一列是**已经做完 pwsh 裁剪**的数；不裁的话 mini-mcp 是 ≈9.1k。
+MCP 那 ~5.3k 的构成（全部按 MCP 握手 `tools/list` 实测，不是估的）：REA **白名单 28 个**被 `tool_search` 压成“名字 + 首句 ≤200 字符 + `[params: tool_search]`”，合计 **4794 B ≈ 1.2k**（每个约 171 B ≈ 43 token）；REA 的 instructions **2604 B ≈ 0.65k**；pwsh 因为 `tool_search.always_load` 给完整 schema，**12 个共 18220 B ≈ 4.55k**（`execute_command` 一个就 4185 B），关掉 6 个远端控制 + `get_current_location` 后剩 5 个 **9396 B ≈ 2.35k**；pwsh 的 instructions 另有 **4378 B ≈ 1.1k**（它连同被关掉的远端控制说明一起发，工具关了文字还在）。
 
-> 早先版本的表写 full ≈ 28k / mini-mcp ≈ 14k，那是 REA **203 个工具全挂**时的数（stub 就 12k）。白名单缩到 28 个、pwsh 裁到 5 个之后，MCP 只占 3.7k，两行都要按上表重算。想再压：把 `pwsh` 从 `always_load` 拿掉（省 ≈1.6k，代价是每次用前多一次 `tool_search`），或继续裁 REA 白名单（每裁 10 个省约 0.6k）。
+> 早先版本的表写 full ≈ 28k / mini-mcp ≈ 14k，那是 REA **203 个工具全挂**时的数（stub 就 12k）。白名单缩到 28 个、pwsh 裁到 5 个之后，MCP 占 5.3k，两行都要按上表重算。想再压：把 `pwsh` 从 `always_load` 拿掉（省 ≈2.35k，代价是每次用前多一次 `tool_search`），或继续裁 REA 白名单（每裁 10 个省约 0.43k）。
 
 这台机器上这些配置项的**当前取值与验证命令**记在 [LOCAL_SETUP.md](LOCAL_SETUP.md)（AGENTS.md 里已引用）。
 
