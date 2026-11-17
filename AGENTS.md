@@ -114,7 +114,13 @@ internal/
 
 ## Build/Test/Lint Commands
 
-- **Build**: `go build .` or `go run .`
+**Before building or deploying this fork, follow [NOTES.md](NOTES.md) (@NOTES.md):**
+the release build flags (`-trimpath -s -w`, version injection), the fixed
+artifact name, and deploying over a running `crush.exe`. Never ship a plain
+`go build .`.
+
+- **Build**: `go build .` or `go run .` (for a throwaway run only; see NOTES.md
+  for anything you deploy)
 - **Test**: `task test` or `go test ./...` (run single test:
   `go test ./internal/llm/prompt -run TestGetContextFromPaths`)
 - **Update Golden Files**: `go test ./... -update` (regenerates `.golden`
