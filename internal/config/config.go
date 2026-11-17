@@ -654,8 +654,13 @@ const DefaultJobOutputWait = 0
 
 // GetShellEnv returns the extra environment for the bash tool, with $VAR and
 // %VAR% references expanded from the parent environment. The result is meant
-// to be appended to os.Environ(); later entries win, so a PATH entry here
-// replaces the inherited one.
+// to be appended to os.Environ(); later entries win.
+//
+// PATH is the exception: a PATH entry here is a list of directories to put in
+// front of the inherited PATH, not a replacement. Prepending is the only thing
+// an extra PATH entry can sensibly mean, and it means the value never has to
+// spell out $PATH — a reference that resolves to nothing would otherwise
+// poison the whole PATH.
 func (o *Options) GetShellEnv() []string {
 	if o == nil || len(o.ShellEnv) == 0 {
 		return nil
@@ -673,9 +678,32 @@ func (o *Options) GetShellEnv() []string {
 		if !ok || key == "" {
 			continue
 		}
+		if strings.EqualFold(key, "PATH") {
+			out = append(out, key+"="+prependPath(val, parent))
+			continue
+		}
 		out = append(out, key+"="+expandEnvValue(val, parent))
 	}
 	return out
+}
+
+// prependPath puts the directories in val in front of the inherited PATH.
+// A trailing $PATH or %PATH% reference is dropped first: appending the
+// inherited PATH is this function's job, and a reference that failed to expand
+// would otherwise end up as a literal PATH entry.
+func prependPath(val string, parent map[string]string) string {
+	val = strings.TrimSuffix(strings.TrimSuffix(val, "$PATH"), "%PATH%")
+	val = strings.TrimSuffix(val, ";")
+	val = expandEnvValue(val, parent)
+	inherited := parent["PATH"]
+	switch {
+	case val == "":
+		return inherited
+	case inherited == "":
+		return val
+	default:
+		return val + ";" + inherited
+	}
 }
 
 // expandEnvValue replaces $VAR and %VAR% references with the parent value.

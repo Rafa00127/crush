@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -93,10 +94,13 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 
 	id := fmt.Sprintf("%03X", idCounter.Add(1))
 
+	// The job inherits the process environment plus whatever the config
+	// adds, so a PATH entry here extends the inherited one instead of
+	// replacing the whole environment.
 	shell := NewShell(&Options{
 		WorkingDir: workingDir,
 		BlockFuncs: blockFuncs,
-		Env:        m.env,
+		Env:        append(os.Environ(), m.env...),
 		BashPath:   m.bashPath,
 	})
 
