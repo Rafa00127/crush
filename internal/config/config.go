@@ -679,7 +679,14 @@ func (o *Options) GetShellEnv() []string {
 			continue
 		}
 		if strings.EqualFold(key, "PATH") {
-			out = append(out, key+"="+prependPath(val, parent))
+			// Windows spells it `Path`, so look the inherited one up
+			// without regard to case and keep its spelling: a second
+			// entry differing only in case would shadow it.
+			inheritedKey, inherited := lookupEnvFold(parent, "PATH")
+			if inheritedKey != "" {
+				key = inheritedKey
+			}
+			out = append(out, key+"="+prependPath(val, inherited, parent))
 			continue
 		}
 		out = append(out, key+"="+expandEnvValue(val, parent))
@@ -687,15 +694,29 @@ func (o *Options) GetShellEnv() []string {
 	return out
 }
 
+// lookupEnvFold returns the stored key and value for name, matching without
+// regard to case, because Windows environment variable names are not
+// case-sensitive and `Path` is the usual spelling there.
+func lookupEnvFold(env map[string]string, name string) (string, string) {
+	if v, ok := env[name]; ok {
+		return name, v
+	}
+	for k, v := range env {
+		if strings.EqualFold(k, name) {
+			return k, v
+		}
+	}
+	return "", ""
+}
+
 // prependPath puts the directories in val in front of the inherited PATH.
 // A trailing $PATH or %PATH% reference is dropped first: appending the
 // inherited PATH is this function's job, and a reference that failed to expand
 // would otherwise end up as a literal PATH entry.
-func prependPath(val string, parent map[string]string) string {
+func prependPath(val, inherited string, parent map[string]string) string {
 	val = strings.TrimSuffix(strings.TrimSuffix(val, "$PATH"), "%PATH%")
 	val = strings.TrimSuffix(val, ";")
 	val = expandEnvValue(val, parent)
-	inherited := parent["PATH"]
 	switch {
 	case val == "":
 		return inherited

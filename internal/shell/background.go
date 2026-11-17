@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -82,6 +83,32 @@ func GetBackgroundShellManager() *BackgroundShellManager {
 	return backgroundManager
 }
 
+// mergeEnv returns base with overrides applied. An override replaces the
+// inherited entry for the same name regardless of case, because Windows
+// environment names are not case-sensitive and keeping both spellings would
+// let the inherited value shadow the override.
+func mergeEnv(base, overrides []string) []string {
+	if len(overrides) == 0 {
+		return base
+	}
+	replaced := make(map[string]struct{}, len(overrides))
+	for _, kv := range overrides {
+		if key, _, ok := strings.Cut(kv, "="); ok {
+			replaced[strings.ToUpper(key)] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(base)+len(overrides))
+	for _, kv := range base {
+		if key, _, ok := strings.Cut(kv, "="); ok {
+			if _, drop := replaced[strings.ToUpper(key)]; drop {
+				continue
+			}
+		}
+		out = append(out, kv)
+	}
+	return append(out, overrides...)
+}
+
 // Start creates and starts a new background shell with the given command,
 // unless maxJobs jobs are already running.
 func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, blockFuncs []BlockFunc, command, description string, maxJobs int) (*BackgroundShell, error) {
@@ -100,7 +127,7 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 	shell := NewShell(&Options{
 		WorkingDir: workingDir,
 		BlockFuncs: blockFuncs,
-		Env:        append(os.Environ(), m.env...),
+		Env:        mergeEnv(os.Environ(), m.env),
 		BashPath:   m.bashPath,
 	})
 
