@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -121,4 +123,34 @@ func TestMiniPromptIsShort(t *testing.T) {
 	require.Contains(t, reminder, "<system-reminder>")
 	require.Contains(t, reminder, "Current working directory:")
 	require.Less(t, len(reminder), 300, "the reminder stays one line: %d bytes", len(reminder))
+}
+
+// The session context must say where the session is without a round of
+// discovery: a git repo gets its branch (and whether the tree is dirty), a
+// non-repo says so outright.
+func TestMiniContextNamesTheRepository(t *testing.T) {
+	t.Parallel()
+
+	p, err := miniPrompt()
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	store, err := config.Init(t.Context(), dir, "", false)
+	require.NoError(t, err)
+
+	_, reminder, err := p.BuildWithReminder(t.Context(), "provider", "model", store)
+	require.NoError(t, err)
+	require.Contains(t, reminder, "not a git repository")
+
+	// A repository: fake just enough of one for the fs-based branch reader.
+	gitDir := filepath.Join(dir, ".git")
+	require.NoError(t, os.MkdirAll(filepath.Join(gitDir, "refs", "heads"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/topic\n"), 0o644))
+
+	store2, err := config.Init(t.Context(), dir, "", false)
+	require.NoError(t, err)
+	_, reminder, err = p.BuildWithReminder(t.Context(), "provider", "model", store2)
+	require.NoError(t, err)
+	require.Contains(t, reminder, "git branch topic")
+	require.NotContains(t, reminder, "not a git repository")
 }

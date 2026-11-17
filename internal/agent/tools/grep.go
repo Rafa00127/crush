@@ -181,9 +181,12 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 }
 
 func searchFiles(ctx context.Context, pattern, rootPath, include string, limit int) ([]grepMatch, bool, error) {
+	// ripgrep returns everything, so its result is never "bailed"; the Go
+	// walker stops early on purpose and says so.
 	matches, err := searchWithRipgrep(ctx, pattern, rootPath, include)
+	var bailed bool
 	if err != nil {
-		matches, err = searchFilesWithRegex(pattern, rootPath, include)
+		matches, bailed, err = searchFilesWithRegex(pattern, rootPath, include, limit)
 		if err != nil {
 			return nil, false, err
 		}
@@ -196,8 +199,8 @@ func searchFiles(ctx context.Context, pattern, rootPath, include string, limit i
 		return matches[i].modTime.After(matches[j].modTime)
 	})
 
-	truncated := len(matches) > limit
-	if truncated {
+	truncated := bailed || len(matches) > limit
+	if len(matches) > limit {
 		matches = matches[:limit]
 	}
 
@@ -273,13 +276,16 @@ type ripgrepMatch struct {
 	} `json:"data"`
 }
 
-func searchFilesWithRegex(pattern, rootPath, include string) ([]grepMatch, error) {
+// searchFilesWithRegex walks the tree without ripgrep. It stops as soon as it
+// has more matches than the caller will keep, and reports that it stopped
+// early so the caller can tell the model the list is incomplete.
+func searchFilesWithRegex(pattern, rootPath, include string, limit int) ([]grepMatch, bool, error) {
 	matches := []grepMatch{}
 
 	// Use cached regex compilation
 	regex, err := searchRegexCache.get(pattern)
 	if err != nil {
-		return nil, fmt.Errorf("invalid regex pattern: %w", err)
+		return nil, false, fmt.Errorf("invalid regex pattern: %w", err)
 	}
 
 	var includePattern *regexp.Regexp
@@ -287,12 +293,13 @@ func searchFilesWithRegex(pattern, rootPath, include string) ([]grepMatch, error
 		regexPattern := globToRegex(include)
 		includePattern, err = globRegexCache.get(regexPattern)
 		if err != nil {
-			return nil, fmt.Errorf("invalid include pattern: %w", err)
+			return nil, false, fmt.Errorf("invalid include pattern: %w", err)
 		}
 	}
 
 	// Create walker with gitignore and crushignore support
 	walker := fsext.NewFastGlobWalker(rootPath)
+	bailed := false
 
 	err = filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -335,7 +342,10 @@ func searchFilesWithRegex(pattern, rootPath, include string) ([]grepMatch, error
 				charNum:  lm.charNum,
 				lineText: lm.lineText,
 			})
-			if len(matches) >= 200 {
+			// One more than the caller keeps: enough to prove there are
+			// more, without walking the rest of a large tree.
+			if limit > 0 && len(matches) > limit {
+				bailed = true
 				return filepath.SkipAll
 			}
 		}
@@ -343,10 +353,10 @@ func searchFilesWithRegex(pattern, rootPath, include string) ([]grepMatch, error
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, bailed, err
 	}
 
-	return matches, nil
+	return matches, bailed, nil
 }
 
 // lineMatch is a single matching line within a file: its 1-based line

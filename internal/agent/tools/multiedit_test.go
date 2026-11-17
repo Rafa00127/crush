@@ -337,3 +337,34 @@ func TestProcessMultiEditWithCreationPartialFailure(t *testing.T) {
 	require.Equal(t, "", meta.OldContent)
 	require.Equal(t, "one\nTWO\nthree\n", meta.NewContent)
 }
+
+// When every edit fails the response has to say why, or the model retries the
+// same call or falls back to rewriting the whole file.
+func TestProcessMultiEditAllFailedExplainsWhy(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "test.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("same\nsame\n"), 0o644))
+
+	edit := editContext{
+		ctx:         context.WithValue(t.Context(), SessionIDContextKey, "session"),
+		permissions: &mockPermissionService{},
+		files:       &mockHistoryService{},
+		filetracker: &mockEditFileTracker{lastRead: time.Now().Add(time.Second)},
+		workingDir:  dir,
+	}
+	params := MultiEditParams{
+		FilePath: filePath,
+		Edits: []MultiEditOperation{
+			{OldString: "same", NewString: "other"},
+		},
+	}
+
+	resp, err := processMultiEditExistingFile(edit, params, fantasy.ToolCall{ID: "call"})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "all 1 edit(s) failed")
+	require.Contains(t, resp.Content, "edit #1:")
+	require.Contains(t, resp.Content, "multiple times", "must carry the reason, like edit does")
+}

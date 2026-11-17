@@ -59,5 +59,6 @@ completions/crush.*sh
 DSH_PARITY.md
 FORK_MAINTENANCE.md
 LOCAL_SETUP.md
+MINI_MCP_ISSUES.md
 /*.png
 /docs-site

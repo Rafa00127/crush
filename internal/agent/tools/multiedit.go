@@ -125,6 +125,28 @@ func validateEdits(edits []MultiEditOperation) error {
 // applyEditsToContent applies edits sequentially, collecting the ones that
 // failed. It also reports whether any edit only matched after whitespace
 // normalization.
+// describeFailedEdits renders the first couple of per-edit errors so the model
+// can tell why every edit failed (ambiguous match, not found, ...) instead of
+// retrying the same call or falling back to rewriting the whole file.
+func describeFailedEdits(failed []FailedEdit) string {
+	if len(failed) == 0 {
+		return ""
+	}
+	const maxReported = 2
+	var b strings.Builder
+	for i, f := range failed {
+		if i == maxReported {
+			b.WriteString("; …")
+			break
+		}
+		if i > 0 {
+			b.WriteString("; ")
+		}
+		fmt.Fprintf(&b, "edit #%d: %s", f.Index, f.Error)
+	}
+	return ": " + b.String()
+}
+
 func applyEditsToContent(currentContent string, edits []MultiEditOperation, startIndex int) (string, []FailedEdit, bool) {
 	var failedEdits []FailedEdit
 	var whitespaceCorrected bool
@@ -259,7 +281,7 @@ func processMultiEditExistingFile(edit editContext, params MultiEditParams, call
 		// If we have failed edits, report them
 		if len(failedEdits) > 0 {
 			return fantasy.WithResponseMetadata(
-				fantasy.NewTextErrorResponse(fmt.Sprintf("no changes made - all %d edit(s) failed", len(failedEdits))),
+				fantasy.NewTextErrorResponse(fmt.Sprintf("no changes made - all %d edit(s) failed%s", len(failedEdits), describeFailedEdits(failedEdits))),
 				MultiEditResponseMetadata{
 					EditsApplied: 0,
 					EditsFailed:  failedEdits,

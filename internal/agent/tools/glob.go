@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -71,6 +72,7 @@ func NewGlobTool(workingDir string, cfg config.ToolGlob) fantasy.AgentTool {
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("error finding files: %v", err)), nil
 			}
+			files = keepFiles(files)
 
 			var output string
 			if len(files) == 0 {
@@ -92,6 +94,22 @@ func NewGlobTool(workingDir string, cfg config.ToolGlob) fantasy.AgentTool {
 			), nil
 		},
 	)
+}
+
+// keepFiles drops directory entries. The ripgrep path only ever yields files,
+// but the filesystem walker reports directories too when the pattern matches
+// them (e.g. "**/*"), and a result list that mixes in "subdir" is noise the
+// model has to filter out itself.
+func keepFiles(paths []string) []string {
+	out := paths[:0]
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func globFiles(ctx context.Context, pattern, searchPath string, limit int) ([]string, bool, error) {

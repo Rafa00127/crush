@@ -73,6 +73,13 @@ func NewWriteTool(
 
 				modTime := fileInfo.ModTime().Truncate(time.Second)
 				lastRead := filetracker.LastReadTime(ctx, sessionID, filePath)
+				if lastRead.IsZero() {
+					// Never read in this session. Reporting this as "modified since last
+					// read" with a zero timestamp reads as if the file changed under the
+					// model, which sends it hunting for a culprit that does not exist.
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("File %s has not been read in this session. Read it first, then write the whole file.",
+						filePath)), nil
+				}
 				if modTime.After(lastRead) {
 					return fantasy.NewTextErrorResponse(fmt.Sprintf("File %s has been modified since it was last read.\nLast modification: %s\nLast read: %s\n\nPlease read the file again before modifying it.",
 						filePath, modTime.Format(time.RFC3339), lastRead.Format(time.RFC3339))), nil

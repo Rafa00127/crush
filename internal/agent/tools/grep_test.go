@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -85,7 +86,10 @@ func TestGrepWithIgnoreFiles(t *testing.T) {
 
 	// Test both implementations
 	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
-		"regex": searchFilesWithRegex,
+		"regex": func(pattern, path, include string) ([]grepMatch, error) {
+			matches, _, err := searchFilesWithRegex(pattern, path, include, GrepMaxResults)
+			return matches, err
+		},
 		"rg": func(pattern, path, include string) ([]grepMatch, error) {
 			return searchWithRipgrep(t.Context(), pattern, path, include)
 		},
@@ -145,7 +149,10 @@ func TestSearchImplementations(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, ".crushignore"), []byte("file5.txt\n"), 0o644))
 
 	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
-		"regex": searchFilesWithRegex,
+		"regex": func(pattern, path, include string) ([]grepMatch, error) {
+			matches, _, err := searchFilesWithRegex(pattern, path, include, GrepMaxResults)
+			return matches, err
+		},
 		"rg": func(pattern, path, include string) ([]grepMatch, error) {
 			return searchWithRipgrep(t.Context(), pattern, path, include)
 		},
@@ -401,7 +408,10 @@ func TestMultipleMatchesPerFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "file.txt"), []byte(content), 0o644))
 
 	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
-		"regex": searchFilesWithRegex,
+		"regex": func(pattern, path, include string) ([]grepMatch, error) {
+			matches, _, err := searchFilesWithRegex(pattern, path, include, GrepMaxResults)
+			return matches, err
+		},
 		"rg": func(pattern, path, include string) ([]grepMatch, error) {
 			return searchWithRipgrep(t.Context(), pattern, path, include)
 		},
@@ -433,7 +443,10 @@ func TestColumnMatch(t *testing.T) {
 
 	// Test both implementations
 	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
-		"regex": searchFilesWithRegex,
+		"regex": func(pattern, path, include string) ([]grepMatch, error) {
+			matches, _, err := searchFilesWithRegex(pattern, path, include, GrepMaxResults)
+			return matches, err
+		},
 		"rg": func(pattern, path, include string) ([]grepMatch, error) {
 			return searchWithRipgrep(t.Context(), pattern, path, include)
 		},
@@ -455,4 +468,21 @@ func TestColumnMatch(t *testing.T) {
 			require.Equal(t, "testdata/grep.txt", filepath.ToSlash(filepath.Clean(match.path)))
 		})
 	}
+}
+
+// A Go-walk search must tell the caller it stopped early: the caller keeps
+// only `limit` matches, and a silent cut would read as a complete answer.
+func TestSearchFilesWithRegexReportsTruncation(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	for i := range 130 {
+		name := filepath.Join(tempDir, fmt.Sprintf("f%03d.txt", i))
+		require.NoError(t, os.WriteFile(name, []byte("needle in a haystack\n"), 0o644))
+	}
+
+	matches, bailed, err := searchFilesWithRegex("needle", tempDir, "", 100)
+	require.NoError(t, err)
+	require.True(t, bailed, "must report that the walk stopped early")
+	require.Greater(t, len(matches), 100, "must collect one more than the limit to prove there are more")
 }

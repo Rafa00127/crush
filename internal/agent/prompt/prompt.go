@@ -47,11 +47,17 @@ type Prompt struct {
 }
 
 type PromptDat struct {
-	Provider           string
-	Model              string
-	Config             config.Config
-	WorkingDir         string
-	IsGitRepo          bool
+	Provider   string
+	Model      string
+	Config     config.Config
+	WorkingDir string
+	IsGitRepo  bool
+	// GitBranch and GitDirty are session-stable facts about the repository:
+	// they let a trimmed prompt say where it is without the model spending
+	// calls to find out. Never refresh them per turn — the reminder is built
+	// once and must stay cacheable.
+	GitBranch          string
+	GitDirty           bool
 	Platform           string
 	Date               string
 	GitStatus          string
@@ -354,6 +360,8 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 		if err != nil {
 			return PromptDat{}, err
 		}
+		data.GitBranch = gitutil.CurrentBranch(store.WorkingDir())
+		data.GitDirty = gitDirty(ctx, store.WorkingDir())
 	}
 
 	for _, files := range contextFiles {
@@ -387,6 +395,18 @@ func getGitStatus(ctx context.Context, dir string) (string, error) {
 }
 
 // getGitBranch reads the checked-out branch straight from the repository.
+// gitDirty reports whether the worktree has staged or unstaged changes. The
+// prompt is built once per agent, not per turn, so one git call here is not on
+// the hot path; a failure just means "unknown", rendered as clean.
+func gitDirty(ctx context.Context, dir string) bool {
+	sh := shell.NewShell(&shell.Options{WorkingDir: dir})
+	out, _, err := sh.Exec(ctx, "git status --porcelain 2>/dev/null")
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(out) != ""
+}
+
 // This runs on every prompt build, so it stays off the shell: spawning git
 // each turn is wasted work, and a detail of prompt assembly has no business
 // passing through command blocking and permission policy.

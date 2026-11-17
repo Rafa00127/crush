@@ -72,3 +72,18 @@ func TestGlobFilesCapsResultsOnLargeTree(t *testing.T) {
 	require.LessOrEqual(t, len(got), 10, "must not exceed limit")
 	require.True(t, truncated, "should report truncation on an over-limit tree")
 }
+
+// The filesystem walker reports directories when the pattern matches them; the
+// tool must hand back files only, or the model gets "subdir" mixed into a list
+// of paths it is about to open.
+func TestKeepFilesDropsDirectories(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	file := filepath.Join(dir, "a.go")
+	require.NoError(t, os.WriteFile(file, []byte("package a\n"), 0o644))
+
+	got := keepFiles([]string{dir, filepath.Join(dir, "sub"), file})
+	require.Equal(t, []string{file}, got)
+}

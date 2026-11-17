@@ -285,6 +285,13 @@ func loadExistingFile(edit editContext, filePath, sessionError string) (sessionI
 	}
 
 	modTime := fileInfo.ModTime().Truncate(time.Second)
+	if lastRead.IsZero() {
+		// Distinguish "never read" from "changed on disk": the zero timestamp
+		// in the latter message reads like the file moved under the model.
+		return "", "", false, fantasy.NewTextErrorResponse(
+			fmt.Sprintf("file %s has not been read in this session; read it first, then edit it", filePath),
+		), nil
+	}
 	if modTime.After(lastRead) {
 		return "", "", false, fantasy.NewTextErrorResponse(
 			fmt.Sprintf(
