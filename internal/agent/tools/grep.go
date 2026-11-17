@@ -150,7 +150,12 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 			if len(matches) == 0 {
 				output.WriteString("No files found")
 			} else {
-				fmt.Fprintf(&output, "Found %d matches\n", len(matches))
+				if truncated {
+					// len(matches) is what was kept, not what exists.
+					fmt.Fprintf(&output, "Showing the first %d matches\n", len(matches))
+				} else {
+					fmt.Fprintf(&output, "Found %d matches\n", len(matches))
+				}
 
 				for _, match := range matches {
 					if match.lineNum <= 0 {

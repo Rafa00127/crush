@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"testing"
 
+	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -485,4 +487,26 @@ func TestSearchFilesWithRegexReportsTruncation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bailed, "must report that the walk stopped early")
 	require.Greater(t, len(matches), 100, "must collect one more than the limit to prove there are more")
+}
+
+// When the list is cut the header must not read like a complete answer.
+func TestGrepHeaderSaysShowingWhenTruncated(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	for i := range GrepMaxResults + 5 {
+		name := filepath.Join(dir, fmt.Sprintf("f%03d.txt", i))
+		if err := os.WriteFile(name, []byte("needle\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tool := NewGrepTool(dir, config.ToolGrep{})
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{
+		Input: `{"pattern":"needle"}`,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, resp.Content)
+	require.Contains(t, resp.Content, "Showing the first", "truncated output must not claim a complete count")
+	require.Contains(t, resp.Content, "truncated")
 }
