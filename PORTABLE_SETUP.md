@@ -183,6 +183,16 @@ mini-mcp 加回来那 4 个工具的理由：diff 预览、编辑后 LSP 诊断�
 - 静态分析里 `xrefs`、`procedure_pseudo_code`、`resolve_containing_procedure`、`search_strings` 是主力，
   `list_procedures`/`list_strings` 这类"全量列举"在大型 PE 上一次几十万行，**故意不放**，用 `search_*` 代替。
 - 需要新工具时先枚举真实名字再往 `enabled_tools` 里加（见 §6、§7），别凭印象写。
+
+**推荐做法：全局 `"disabled": true`，只在要逆向的项目里打开。** 逆向是少数场景，没必要每轮都付这 1.85k。
+项目侧只要 4 行（对象合并，`disabled: false` 覆盖全局；`enabled_tools` 是数组、跨文件追加，不用抄 28 个）：
+
+```json
+{
+  "$schema": "https://charm.land/crush.json",
+  "mcp": { "rea": { "disabled": false } }
+}
+```
 - 数一下成本：实测每个 stub 约 171 B ≈ 43 token，所以每多 10 个工具约 +0.43k token。
 
 - 需要 **Node ≥ 24.22.1**（6.8+ 的硬要求），装分析引擎后加 env：
