@@ -147,7 +147,8 @@ func WithSkillOverrides(disabled, enabled func(ctx context.Context) []string) Op
 				e = enabled(ctx)
 			}
 			return d, e
-		}	}
+		}
+	}
 }
 
 func NewPrompt(name, promptTemplate string, opts ...Option) (*Prompt, error) {

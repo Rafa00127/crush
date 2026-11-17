@@ -157,7 +157,8 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 					// sub-agent has to drive itself.
 					searchHint = "Use the web_search tool to find relevant information; the provider runs it and returns source titles and URLs. When a result lacks a usable excerpt, use web_fetch to read the page and extract details yourself. Break the question into focused searches if needed."
 				}
-				fullPrompt = fmt.Sprintf("%s\n\n%s", params.Prompt, searchHint)			}
+				fullPrompt = fmt.Sprintf("%s\n\n%s", params.Prompt, searchHint)
+			}
 
 			promptOpts := []prompt.Option{
 				prompt.WithWorkingDir(tmpDir),
@@ -206,7 +207,8 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 				Messages:             c.messages,
 				Tools:                fetchTools,
 				ProviderTools:        providerTools,
-				titles:               &c.titles,			})
+				titles:               &c.titles,
+			})
 
 			return c.runSubAgentMaybeBackground(ctx, tools.AgenticFetchToolName, accessRead, subAgentParams{
 				Agent:          agent,

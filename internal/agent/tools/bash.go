@@ -335,7 +335,7 @@ func yoloBlockedMessage(command string) string {
 	return fmt.Sprintf("blocked: %s is a dangerous command, and yolo mode blocks dangerous commands without asking. Tell the user: they can switch to normal mode to be asked about it, use sysadmin mode to allow it, or mark it safe with `permissions safe`.", command)
 }
 
-func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, spillDir string, blockFuncsToUse []shell.BlockFunc, maxBackgroundJobs, autoBackgroundAfter int) (fantasy.ToolResponse, error) {	// If explicitly requested as background, start immediately with detached context
+func executeBashCommand(ctx context.Context, params BashParams, execWorkingDir, spillDir string, blockFuncsToUse []shell.BlockFunc, maxBackgroundJobs, autoBackgroundAfter int) (fantasy.ToolResponse, error) { // If explicitly requested as background, start immediately with detached context
 	if params.RunInBackground {
 		startTime := time.Now()
 		bgManager := shell.GetBackgroundShellManager()
