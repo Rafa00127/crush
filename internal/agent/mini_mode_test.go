@@ -36,8 +36,13 @@ func TestEffectiveToolNamesMiniKeepsOnlyTheShell(t *testing.T) {
 		},
 	}
 
-	require.Equal(t, []string{tools.BashToolName, tools.ReadImageToolName, tools.JobKillToolName},
-		c.effectiveToolNames(agentCfg, false))
+	require.Equal(t, []string{
+		tools.BashToolName,
+		tools.ReadImageToolName,
+		tools.FetchToolName,
+		tools.WebSearchToolName,
+		tools.JobKillToolName,
+	}, c.effectiveToolNames(agentCfg, false))
 
 	t.Run("subagents are not trimmed by mini", func(t *testing.T) {
 		t.Parallel()

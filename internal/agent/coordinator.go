@@ -1135,10 +1135,14 @@ func (c *coordinator) effectiveToolNames(agentCfg config.Agent, isSubAgent bool)
 }
 
 // miniToolNames is what --mode mini leaves the agent: the shell does
-// everything, and job_kill is the one thing a shell cannot do for itself.
+// everything it can, plus the three things a shell cannot do for itself --
+// look at a picture, read the web without a terminal full of HTML, and stop a
+// job it started.
 var miniToolNames = []string{
 	tools.BashToolName,
 	tools.ReadImageToolName,
+	tools.FetchToolName,
+	tools.WebSearchToolName,
 	tools.JobKillToolName,
 }
 
