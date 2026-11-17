@@ -154,3 +154,37 @@ func TestMiniContextNamesTheRepository(t *testing.T) {
 	require.Contains(t, reminder, "git branch topic")
 	require.NotContains(t, reminder, "not a git repository")
 }
+
+// mini-mcp lists the skills and context files instead of inlining them: the
+// model gets a hint and reads what the task needs, which is what keeps the
+// reminder small while making AGENTS.md findable at all.
+func TestMiniMCPContextListsSkillsAndContextFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agents := filepath.Join(dir, "AGENTS.md")
+	require.NoError(t, os.WriteFile(agents, []byte("# rules\n- build with go build\n"), 0o644))
+
+	store, err := config.Init(t.Context(), dir, "", false)
+	require.NoError(t, err)
+	store.Config().Options.ContextPaths = []string{agents}
+
+	p, err := miniMCPPrompt()
+	require.NoError(t, err)
+	_, reminder, err := p.BuildWithReminder(t.Context(), "provider", "model", store)
+	require.NoError(t, err)
+
+	// The file is named (with forward slashes, like every other path a prompt
+	// shows), and its contents are not inlined.
+	require.Contains(t, reminder, filepath.ToSlash(agents))
+	require.NotContains(t, reminder, "build with go build")
+	require.Contains(t, reminder, "<context_files>")
+
+	// Plain mini keeps the one-line reminder.
+	pMini, err := miniPrompt()
+	require.NoError(t, err)
+	_, plain, err := pMini.BuildWithReminder(t.Context(), "provider", "model", store)
+	require.NoError(t, err)
+	require.NotContains(t, plain, "<context_files>")
+	require.NotContains(t, plain, "AGENTS.md")
+}

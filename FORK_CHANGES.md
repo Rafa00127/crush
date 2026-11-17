@@ -303,7 +303,7 @@ git reset --hard backup/pre-sync-20261114
 | 层 | mini | mini-mcp |
 |---|---|---|
 | system | **一句**：`You are a helpful software engineer assistant.`（`templates/mini.md.tpl`） | 同左 |
-| 会话上下文 | 一条 `<system-reminder>`，**只带 cwd**（`templates/mini_context.md.tpl`） | 同左 |
+| 会话上下文 | 一条 `<system-reminder>`，**只带 cwd + 分支/是否 dirty**（`templates/mini_context.md.tpl`，实测 208 B ≈ 52 token） | 同左 **+ 技能表 + 上下文文件清单**（`templates/mini_mcp_context.md.tpl`）：技能只发 `<description>`，AGENTS.md/CRUSH.md 只列路径，都靠 `read` 按需打开；实测 3,095 B ≈ 773 token（比 mini 多 ~721 token/请求） |
 | 工具 | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（`coordinator.miniToolNames`）；MCP 一个不挂 | 同左 **+ `read`/`edit`/`multiedit`/`write`/`grep`/`glob`/`ls`/`job_output`**（`miniMCPToolNames`）+ **所有 MCP 工具**（`tool_search` 按你配置的阈值延后 schema）；MCP server 正常启动。`todos` 仍不加 |
 | bash 描述 | `tools/bash_mini.md`（约 700 字符）。完整版约 11.5KB，其中危险命令清单就占 ~1.7KB | 同左 |
 | 上下文提醒 | 不进 AGENTS.md / 技能表（与 DSH minimal 一致） | 同左 |

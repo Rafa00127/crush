@@ -365,12 +365,25 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 	}
 
 	for _, files := range contextFiles {
-		data.ContextFiles = append(data.ContextFiles, files...)
+		data.ContextFiles = append(data.ContextFiles, slashPaths(files)...)
 	}
 	for _, files := range globalContextFiles {
-		data.GlobalContextFiles = append(data.GlobalContextFiles, files...)
+		data.GlobalContextFiles = append(data.GlobalContextFiles, slashPaths(files)...)
 	}
 	return data, nil
+}
+
+// slashPaths normalises the paths a prompt shows: the same list can mix
+// separators (a default name list joins with `\`, an explicit context path may
+// arrive as `C:/...`), and a prompt that spells one file two ways invites the
+// model to pass the wrong form to a shell.
+func slashPaths(files []ContextFile) []ContextFile {
+	out := make([]ContextFile, 0, len(files))
+	for _, f := range files {
+		f.Path = filepath.ToSlash(f.Path)
+		out = append(out, f)
+	}
+	return out
 }
 
 func isGitRepo(dir string) bool {

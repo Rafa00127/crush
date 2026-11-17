@@ -288,7 +288,12 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 	// the mode is a short fixed prompt with a single tool.
 	buildCoderPrompt := coderPrompt
 	if c.miniMode() {
+		// mini-mcp has `read`, so the session context can name the skills and
+		// context files without inlining them; plain mini has only a shell.
 		buildCoderPrompt = miniPrompt
+		if c.miniKeepsMCP() {
+			buildCoderPrompt = miniMCPPrompt
+		}
 	}
 	coderPrompt, err := buildCoderPrompt(promptOpts...)
 	if err != nil {

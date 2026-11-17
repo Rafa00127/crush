@@ -29,6 +29,9 @@ var miniPromptTmpl []byte
 //go:embed templates/mini_context.md.tpl
 var miniContextTmpl []byte
 
+//go:embed templates/mini_mcp_context.md.tpl
+var miniMCPContextTmpl []byte
+
 func coderPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	opts = append(opts, prompt.WithReminderTemplate(string(contextReminderTmpl)))
 	systemPrompt, err := prompt.NewPrompt("coder", string(coderPromptTmpl), opts...)
@@ -45,6 +48,20 @@ func coderPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 func miniPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	opts = append(opts, prompt.WithReminderTemplate(string(miniContextTmpl)))
 	systemPrompt, err := prompt.NewPrompt("mini", string(miniPromptTmpl), opts...)
+	if err != nil {
+		return nil, err
+	}
+	return systemPrompt, nil
+}
+
+// miniMCPPrompt is mini's prompt with a slightly larger session context: it
+// still says only where the session is, but it also names the skills and the
+// context files that exist, so the model knows what it can read. The files
+// themselves stay out of the prompt — they cost their full size on every
+// request, and the model only needs the ones a task actually touches.
+func miniMCPPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
+	opts = append(opts, prompt.WithReminderTemplate(string(miniMCPContextTmpl)))
+	systemPrompt, err := prompt.NewPrompt("mini-mcp", string(miniPromptTmpl), opts...)
 	if err != nil {
 		return nil, err
 	}
