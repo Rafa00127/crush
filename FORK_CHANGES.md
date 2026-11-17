@@ -6,9 +6,9 @@
 
 基线（每次同步后更新这两行）：
 
-- `origin/main` = `b576f95`（merge-base `b576f95`）
-- 本地 `local/dshlike` = `3c91a87`，超出上游 **19 个提交**；已提交改动 63 个文件、
-  +2809 / −622 行。此外还有一批**未提交**的改动（见第 1 节）。
+- `origin/main` = `fb19c85`（上游已打 `v0.100.0` / `v0.101.0`）
+- 本地 `local/dshlike` = `9a75185`，**已合并上游**（原先落后 121 个提交）；
+  相对上游仍保留 **40 个本地提交**、87 个文件、+4976 / −717 行。
 
 判读命令：
 
@@ -20,7 +20,7 @@ git status --short && git diff --stat        # 在途改动
 
 ---
 
-## 1. 后台作业与长工具调用（未提交，进行中）
+## 1. 后台作业与长工具调用（已提交）
 
 这一块是当前最大的本地改动，解决"长命令把整轮对话卡住、出错也看不出来"。
 
@@ -169,7 +169,33 @@ go test ./internal/shell/ ./internal/agent/tools/ ./internal/config/ ./internal/
   在 release 后暴露成"配置不生效"。
 - 未提交的在途改动同步上游前要先落成提交，否则 stash/merge 会把两批改动混在一起。
 
-## 5. 上游同步计划（2026-11-14 待做）
+## 5. 上游同步（2026-11-17 已完成）
+
+`origin/main`（`fb19c85`，121 个提交）已合入，提交 `bcd635e`；紧随其后两个小提交
+（`test:` 修正断言、`style:` gofumpt）。结论与要点：
+
+- **冲突只有 14 个文件**，且都是预期内的那几个：模板文案、工具清单、`bash.go` 的签名、
+  `coordinator.go` 的工具装配、`prompt.go` 的 Option 集合、`ui/chat/file.go` 的工具名。
+- **我方功能全部保住**：`autoBackgroundAfter` 交棒、`job_output` 有限等待/盘点/默认不等、
+  `TypeJobFinished` 弹框与 hidden 转交、provider 侧 web search、`tool_search`、strip 构建。
+- **一处语义按上游改了**：`yolo` 模式现在**会拦下危险命令**（不弹框，直接回
+  `yoloBlockedMessage` 并告诉用户怎么放行）。本地原来的 yolo 是"不弹也不拦"，放行全靠
+  `sysadmin`。保留上游行为，是因为它更安全、也是上游接下来的方向；`sysadmin` 仍是
+  "什么都放行"的口子。若想退回旧行为，把 `permission.PermissionMode.RefusesDangerous()`
+  改成恒 `false` 即可（同时要改回 `TestBashTool_YoloModeBlocksDangerousCommandsWithoutPrompting`）。
+- **上游新增子代理系统**（与本地的作业系统并存，互不影响）：
+  - 工具：`agent_dispatch`（起子代理，立即返回）、`agent_send`（中途发消息/换模型）、
+    `agent_status`、`agent_stop`；阻塞式 `agent` 工具保留。
+  - 每个子代理有**自己的子会话**（`CreateAgentToolSessionID`），UI 把它的工具调用嵌套在父
+    会话那个 tool call 下面；名字是 `label` 前缀 + 名单里的名（`betty-date-impl`）。
+  - **报告以独立 message part（`<subagent-report>`）投递**，唤醒父代理的新 turn。
+  - 阻塞式子代理调用超过 `subAgentBackgroundAfter = 60s` 会被 detach 到后台——注意这是
+    **给子代理的**阈值，和本地的 `auto_background_after`（给 bash 命令的，默认 15s）是
+    两套东西，各管各的。
+- 合并后测试：`go build ./...`、`go vet`、gofumpt 全过；`go test ./...` 只剩两个既有
+  WSL/bash 用例失败（`TestDispatch_BashShebang`、`TestDispatch_ShebangPassesExitCode`）。
+
+### 5.x 原计划（留档）
 
 **目标**：把 `origin/main`（`dd40fd9`，105 个提交，已打 `v0.100.0` / `v0.101.0`）
 合进 `local/dshlike`。工作区当前干净，可以先动。
