@@ -26,10 +26,9 @@
 |---|---|---|---|---|
 | `--mode ""`（full） | coder 提示词 + 仓库上下文/技能表 | 35 个 | 挂 | ≈20k token |
 | `--mode mini` | 一句 + cwd | 5 个 | 不启动 | ≈1.2k |
-| `--mode mini-mcp` | 一句 + cwd + MCP instructions | 9 个（+`read`/`edit`/`write`/`job_output`） | 挂 | ≈8k（示例 MCP 裁剪后） |
+| `--mode mini-mcp` | 一句 + cwd + MCP instructions | 13 个（+`read`/`edit`/`multiedit`/`write`/`grep`/`glob`/`ls`/`job_output`） | 挂 | ≈8k（示例 MCP 裁剪后） |
 
-mini-mcp 加回来那 4 个工具的理由：diff 预览、编辑后 LSP 诊断、带行号的读取、可回读的后台作业——shell 替代不了。
-`grep`/`glob`/`ls`/`todos` 不加：shell 做得一样好。
+mini-mcp 加回来那 8 个工具的理由：diff 预览、编辑后 LSP 诊断、带行号的读取、可回读的后台作业，再加上 `grep`/`glob`/`ls` 的**有界输出**（自动读 `.gitignore`/`.crushignore`；grep 250 条封顶、ls 1000 文件封顶）——shell 也能搜能列，但一次 `grep -r`/`ls -R` 失控就能吃掉几千 token，正好把省下的吐回去。`todos` 不加。
 
 ## 3. 配置放哪，怎么合并
 

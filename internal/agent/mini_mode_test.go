@@ -57,9 +57,9 @@ func TestEffectiveToolNamesMiniKeepsOnlyTheShell(t *testing.T) {
 		store.Overrides().Mode = config.ModeMiniMCP
 		t.Cleanup(func() { store.Overrides().Mode = config.ModeMini })
 
-		// Same five, plus the file tools whose diff preview, diagnostics and
-		// line-numbered reads a shell cannot reproduce. grep/glob/ls stay
-		// out: the shell does those as well or better.
+		// Same five, plus the file tools whose diff preview, diagnostics,
+		// line-numbered reads and ignore-aware, output-capped search a shell
+		// does worse.
 		got := c.effectiveToolNames(agentCfg, false)
 		require.Equal(t, []string{
 			tools.BashToolName,
@@ -69,7 +69,11 @@ func TestEffectiveToolNamesMiniKeepsOnlyTheShell(t *testing.T) {
 			tools.JobKillToolName,
 			tools.ViewToolName,
 			tools.EditToolName,
+			tools.MultiEditToolName,
 			tools.WriteToolName,
+			tools.GrepToolName,
+			tools.GlobToolName,
+			tools.LSToolName,
 			tools.JobOutputToolName,
 		}, got)
 	})

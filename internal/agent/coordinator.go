@@ -1152,14 +1152,20 @@ var miniToolNames = []string{
 }
 
 // miniMCPToolNames is what --mode mini-mcp adds on top of mini, once there is
-// a bigger toolset anyway. Each one covers something the shell cannot: an edit
-// shows its diff before it lands and reports LSP diagnostics after, a read
-// costs fewer tokens than dumping the file, and job_output makes the shell's
-// backgrounding observable instead of fire-and-forget.
+// a bigger toolset anyway. Each one covers something the shell does worse: an
+// edit shows its diff before it lands and reports LSP diagnostics after, a read
+// costs fewer tokens than dumping the file, grep/glob/ls honour .gitignore
+// and .crushignore and cap their own output so a stray search cannot flood
+// the window, and job_output makes the shell's backgrounding observable
+// instead of fire-and-forget.
 var miniMCPToolNames = []string{
 	tools.ViewToolName,
 	tools.EditToolName,
+	tools.MultiEditToolName,
 	tools.WriteToolName,
+	tools.GrepToolName,
+	tools.GlobToolName,
+	tools.LSToolName,
 	tools.JobOutputToolName,
 }
 

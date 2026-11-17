@@ -304,7 +304,7 @@ git reset --hard backup/pre-sync-20261114
 |---|---|---|
 | system | **一句**：`You are a helpful software engineer assistant.`（`templates/mini.md.tpl`） | 同左 |
 | 会话上下文 | 一条 `<system-reminder>`，**只带 cwd**（`templates/mini_context.md.tpl`） | 同左 |
-| 工具 | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（`coordinator.miniToolNames`）；MCP 一个不挂 | 同左 **+ `read`/`edit`/`write`/`job_output`**（`miniMCPToolNames`：diff 预览、编辑后 LSP 诊断、省 token 的带行号读取、可回读的后台作业——shell 都替代不了）+ **所有 MCP 工具**（`tool_search` 按你配置的阈值把它们 schema 延后）；MCP server 正常启动。`grep`/`glob`/`ls`/`todos` 仍不加：shell 做得一样好 |
+| 工具 | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（`coordinator.miniToolNames`）；MCP 一个不挂 | 同左 **+ `read`/`edit`/`multiedit`/`write`/`grep`/`glob`/`ls`/`job_output`**（`miniMCPToolNames`）+ **所有 MCP 工具**（`tool_search` 按你配置的阈值延后 schema）；MCP server 正常启动。`todos` 仍不加 |
 | bash 描述 | `tools/bash_mini.md`（约 700 字符）。完整版约 11.5KB，其中危险命令清单就占 ~1.7KB | 同左 |
 | 上下文提醒 | 不进 AGENTS.md / 技能表（与 DSH minimal 一致） | 同左 |
 | 权限 | 不改变，仍由 `-y` / `-yy` / 配置决定 | 同左 |
