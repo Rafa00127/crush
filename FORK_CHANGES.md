@@ -324,7 +324,18 @@ git reset --hard backup/pre-sync-20261114
 
 - `options.bash_path`：命中时 shell 层用 `<bash> -c "<command>"` 执行，替代内建 mvdan 解释器；`WaitDelay`、退出码、流式输出、作业模型全部不变。没设就退回解释器。
 - `options.shell_env`：`KEY=VALUE` 列表，值支持 `$VAR` / `%VAR%`；**`PATH` 是前置语义**（自动拼上继承的 PATH，不需要写 `$PATH`）；覆盖同名变量时按大小写不敏感剔除继承项（Windows 拼作 `Path`）。
-- 本机配置写进**全局** `~/.config/crush/crush.json`（`bash_path: <msys>/usr/bin/bash.exe`、`shell_env: ["PATH=<msys>/ucrt64/bin;<msys>/usr/bin", "MSYSTEM=MSYS"]`，ucrt64 在 PATH 上才能用 g++ 16.2）。放在全局而不是仓库配置里，换工作目录（例如 `CrushChat`）也生效。
+- 本机配置写进**全局** `~/.config/crush/crush.json`：
+
+  ```json
+  "bash_path": "<msys>/usr/bin/bash.exe",
+  "shell_env": [
+      "PATH=<msys>/ucrt64/bin;<git cmd>;<msys>/usr/bin",
+      "MSYSTEM=MSYS",
+      "HOME=<Windows 用户目录>"
+  ]
+  ```
+
+  放在全局而不是仓库配置里，换工作目录（例如 `CrushChat`）也生效。三段 PATH 的顺序各有原因：`ucrt64/bin` 在首位才能用上 g++ 16.2；`PortableGit/cmd` 只含 `git`/`gitk`/`scalar`/`tig`，让 `git` 用 Windows 版（有 `user.name`、有 GCM 凭据；`git.exe` 会把自己的 `mingw64/bin` 塞给子进程，所以不必把 `mingw64/bin` 写进 PATH，否则 curl/openssl/xz 等一大票都会被前置）；`usr/bin` 保持 msys coreutils 与 `sh`（hooks 用的是 `sh`）。`HOME` 必须指到 `<Windows 用户目录>`，否则 msys bash 的 `HOME=/home/A`，git 读不到 `.gitconfig`（提交报身份未知、push 卡在用户名提示），`${HOME}/.config/crush/hooks/*.sh` 这些 hook 路径也会指错。
 - 注意：PATH 上的 `bash` 在 Windows 通常是 WSL，路径是 `/mnt/d/...`；msys 是 `/d/...`，两者不能混用。
 
 ### 6.4 与 DSH minimal 的对照
