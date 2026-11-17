@@ -350,7 +350,9 @@ REA 注册 207 个工具；全挂时即使 `tool_search` 把 schema 延后、只
 - **代码不用改**：`MCPConfig.EnabledTools` 早就存在，`tools.go:filterTools` 先按它过滤，再减 `disabled_tools`；`mcpConfigEqual` 也已把它算进“要不要重启 client”的比较。
 - **为什么用允许清单而不是禁用清单**：跨配置文件的数组是**追加**（见 6.3 的 shell_env）。允许清单意味着“全局收紧、某项目追加放开”天然可用；禁用清单做不到——项目无法取消全局的禁用项。
 - **按项目加**：在项目的 `.crush.json` 里写 `"mcp": {"rea": {"enabled_tools": ["额外工具名"]}}`，会叠加在全局 28 个之上。短名（`xrefs`），不是 `mcp__rea__xrefs`。
-- **副作用**：REA 升级新增的工具默认不可见，需要时手动加。工具真实名字用 `node ~/.config/crush/skills/rea-token-budget/scripts/list-tools.mjs [关键词]` 枚举（MCP 握手拿到的表，207 个），说明见同名 skill。
+- **副作用**：REA 升级新增的工具默认不可见，需要时手动加。工具真实名字用 `node ~/.config/crush/skills/rea-token-budget/scripts/list-tools.mjs [关键词]` 枚举（MCP 握手拿到的表），说明见同名 skill。
+- **2026-11-17 升级到 6.9.0**：工具数 207 → **255**，28 个白名单名字全部仍存在（升级后实测）。前置条件是把本机 Node 从 24.19.0 换到 **24.22.1**（REA 6.8+ 要求 `^22.23.4 || ^24.22.1 || >=26.12.1`）。换法是官方 win-x64 zip 覆盖绿色版目录 `<本机路径>\NodeJS`（该目录 ACL 只给普通用户 ReadAndExecute，需要在管理员控制台里改名+替换）；旧目录留作 `NodeJS.bak-<时间戳>`。npm 的全局前缀原本写在旧版 `node_modules/npm/npmrc`（`prefix=${APPDATA}\npm`），换本体后改用 `~/.npmrc` 里的 `prefix=<Windows 用户目录>\AppData\Roaming\npm` 保持原行为。
+- 6.9.0 的默认值变化会影响调用写法：`analyze_function` 默认只回 retained summary（要全文传 `detail: "complete"`），MCP 输入 schema 默认紧凑，`close_binary` 保留记录（释放用 `reset_investigation`），单次数组/对象元素上限 1024。
 
 
 ### 6.4 与 DSH minimal 的对照
