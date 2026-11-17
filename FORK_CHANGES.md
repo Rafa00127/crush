@@ -302,7 +302,7 @@ git reset --hard backup/pre-sync-20261114
 |---|---|
 | system | **一句**：`You are a helpful software engineer assistant.`（`templates/mini.md.tpl`） |
 | 会话上下文 | 一条 `<system-reminder>`，**只带 cwd**（`templates/mini_context.md.tpl`，走既有 reminder 机制，作为首条 user 消息，缓存稳定） |
-| 工具 | `bash` + `read_image` + `job_kill`（`coordinator.miniToolNames`）；MCP 一个不挂；plan agent 不受裁剪 |
+| 工具 | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（`coordinator.miniToolNames`）；MCP 一个不挂；plan agent 不受裁剪 |
 | bash 描述 | `tools/bash_mini.md`（约 700 字符）。完整版约 11.5KB，其中危险命令清单就占 ~1.7KB |
 | 上下文提醒 | 不进 AGENTS.md / 技能表（与 DSH minimal 一致） |
 | 权限 | 不改变，仍由 `-y` / `-yy` / 配置决定 |
@@ -331,7 +331,7 @@ git reset --hard backup/pre-sync-20261114
 |---|---|---|
 | system | 一句 | 一句（相同） |
 | 会话上下文 | `<system-reminder>` 带 cwd | 相同 |
-| 工具 | `bash` + `read_image` + `working_directory` | `bash` + `read_image` + `job_kill`（cwd 由配置决定，不需要 working_directory；job_kill 用来停掉自己起的后台作业） |
+| 工具 | `bash` + `read_image` + `working_directory` | `bash` + `read_image` + `fetch` + `web_search` + `job_kill`（cwd 由配置决定；联网给的是工具而不是放行 curl；job_kill 用来停自己起的后台作业） |
 | bash 描述 | ~595 字符 | ~700 字符 |
 | shell 持久性 | 持久（cd/export 跨调用） | **一次性**（每次新进程；提示词里明说用 `&&`） |
 
