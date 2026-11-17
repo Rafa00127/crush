@@ -24,6 +24,10 @@ read [FORK_CHANGES.md](FORK_CHANGES.md): it lists every local divergence from
 `FORK_MAINTENANCE.md` is not tracked by git; upstream sync steps also live in the
 `fork-maintenance` skill.
 
+Setting this fork up on a *different* machine (mini vs mini-mcp, wiring an MCP server,
+using a real bash, trimming MCP token cost, installing skills) is
+[PORTABLE_SETUP.md](PORTABLE_SETUP.md); it has no machine paths in it.
+
 This machine's own setup — the msys bash / git / g++ PATH order, the portable Node,
 the REA and PowerShell.MCP tool allow lists, `options.mode`, and the per-request
 token budget of each mode — is in LOCAL_SETUP.md (@LOCAL_SETUP.md). It holds machine
