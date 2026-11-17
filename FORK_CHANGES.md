@@ -312,6 +312,8 @@ git reset --hard backup/pre-sync-20261114
 - `internal/agent/templates/mini.md.tpl`、`mini_context.md.tpl`（新）
 - `internal/agent/prompts.go`：`miniPrompt()`，带极短 reminder 模板
 - `internal/agent/coordinator.go`：`miniMode()`、`miniToolNames`、`effectiveToolNames` 的 mini 分支（只裁 coder）、`buildTools` 跳过 MCP、system prompt 选择
+- `internal/app/app.go`：mini 下不 `ArmInit`、不 `mcp.Initialize`
+- `internal/agent/agent.go`：todos 提醒只在工具集真有 `todos` 时追加
 - `internal/config/store.go`：`RuntimeOverrides.Mini`
 - `internal/cmd/root.go`：`--mode` flag
 - `internal/agent/tools/bash_mini.md`（新）与 `NewBashTool(..., miniMode)`：mini 用短描述
@@ -322,7 +324,7 @@ git reset --hard backup/pre-sync-20261114
 
 - `options.bash_path`：命中时 shell 层用 `<bash> -c "<command>"` 执行，替代内建 mvdan 解释器；`WaitDelay`、退出码、流式输出、作业模型全部不变。没设就退回解释器。
 - `options.shell_env`：`KEY=VALUE` 列表，值支持 `$VAR` / `%VAR%`；**`PATH` 是前置语义**（自动拼上继承的 PATH，不需要写 `$PATH`）；覆盖同名变量时按大小写不敏感剔除继承项（Windows 拼作 `Path`）。
-- 本机配置：`bash_path: <msys>/usr/bin/bash.exe`、`shell_env: ["PATH=<msys>/ucrt64/bin;<msys>/usr/bin", "MSYSTEM=MSYS"]`（ucrt64 在 PATH 上才能用 g++ 16.2）。
+- 本机配置写进**全局** `~/.config/crush/crush.json`（`bash_path: <msys>/usr/bin/bash.exe`、`shell_env: ["PATH=<msys>/ucrt64/bin;<msys>/usr/bin", "MSYSTEM=MSYS"]`，ucrt64 在 PATH 上才能用 g++ 16.2）。放在全局而不是仓库配置里，换工作目录（例如 `CrushChat`）也生效。
 - 注意：PATH 上的 `bash` 在 Windows 通常是 WSL，路径是 `/mnt/d/...`；msys 是 `/d/...`，两者不能混用。
 
 ### 6.4 与 DSH minimal 的对照
@@ -342,3 +344,9 @@ git reset --hard backup/pre-sync-20261114
 ### 6.6 缓存注意
 
 切模式、切模型、压缩都会让前缀缓存整体失效（改的是前缀最前面的 system/tools）。mini 内部稳定；因此**任何每轮变化的东西**（当前时间、实时 git 状态、作业摘要）都不能进 system prompt / context reminder / 工具描述，只能放在历史尾部或以工具结果形式送达。
+
+### 6.7 提示词卫生：只说存在的工具
+
+- **MCP 在 mini 下完全不启动**（`app.go`：`miniMode` 为真时不 `mcp.ArmInit`、不 `mcp.Initialize`）：少几个 node/python 进程的启动时间，也让 MCP server 的 `instructions` 不会出现在一个用不到它们的 prompt 里。不 `ArmInit` 时 `WaitForInit`/`WaitForInitBudget` 立即返回，首轮不会被卡。
+- **todos 提醒按工具门控**：那段“todo list 为空、请用 `todos` 工具”的提醒原本对每个非子 agent 都追加，而 mini 没有 `todos`；现在只在工具集里真有 `todos` 时追加。
+- 没有额外加“instructions 按工具集过滤”的逻辑：mini 根本不连 MCP 后就没必要了，少一处分叉。

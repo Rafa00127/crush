@@ -1779,7 +1779,11 @@ func (a *sessionAgent) preparePromptInternal(includeReminder bool, msgs []messag
 			history = append(history, fantasy.NewUserMessage(reminder))
 		}
 	}
-	if !a.isSubAgent {
+	// The todos reminder names a tool, so it only belongs in a session that
+	// has one: mini has no todos tool.
+	if !a.isSubAgent && slices.ContainsFunc(a.tools.Copy(), func(t fantasy.AgentTool) bool {
+		return t.Info().Name == tools.TodosToolName
+	}) {
 		history = append(history, fantasy.NewUserMessage(
 			fmt.Sprintf(
 				"<system_reminder>%s</system_reminder>",

@@ -196,10 +196,16 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		slog.Warn("Clipboard initialization failed", "error", err)
 	}
 
+	// mini mode never calls an MCP tool, so its servers are left off: no
+	// startup cost, and no instructions for tools nothing can call. Without
+	// ArmInit the init gate stays closed, so nothing waits for them either.
+	miniMode := store.Overrides().Mini
 	// Arm initialization synchronously before launching it so WaitForInit
 	// blocks for the in-flight init instead of racing the goroutine and
 	// returning before any MCP tools register.
-	mcp.ArmInit()
+	if !miniMode {
+		mcp.ArmInit()
+	}
 	// Config-disabled servers the user enabled via Toggle MCPs have a
 	// repository-scoped enabled override; force-start them so the toggle
 	// survives restarts. A read failure only means the override is skipped.
@@ -218,7 +224,9 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	if err != nil {
 		slog.Warn("Failed to list disabled MCP overrides; starting them anyway", "error", err)
 	}
-	go mcp.Initialize(ctx, app.Permissions, store, forceStart, localDisabled)
+	if !miniMode {
+		go mcp.Initialize(ctx, app.Permissions, store, forceStart, localDisabled)
+	}
 
 	// Start herdr integration when running inside a herdr pane.
 	app.herdrClient = herdr.Init()
