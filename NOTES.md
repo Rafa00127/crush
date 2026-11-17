@@ -3,7 +3,7 @@
 ## 本地编译与部署
 
 分支 `local/dshlike` 的本地构建产物固定为仓库根目录的 `crush-dshlike.exe`，
-部署目标是 PATH 上的 `D:\ProgrammingStuff\Crush\crush\crush.exe`。
+部署目标是 PATH 上的 `<部署目录>\crush.exe`。
 
 环境变量沿用 `Taskfile.yaml` 的全局设置（`CGO_ENABLED=0`、
 `GOEXPERIMENT=greenteagc`），构建必须带 `-s -w` 去符号表（否则体积从
@@ -30,12 +30,12 @@ Windows 不允许写正在运行的 exe，所以覆盖前必须先把旧文件�
 `crush.exe.bak-yyyyMMdd-HHmmss`：
 
 ```powershell
-Set-Location -LiteralPath 'D:\ProgrammingStuff\Crush\crush'
+Set-Location -LiteralPath '<部署目录>'
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 if (Get-Process crush -ErrorAction SilentlyContinue) {
     Rename-Item -LiteralPath '.\crush.exe' -NewName "crush.exe.bak-$stamp" -Force
 }
-Copy-Item -LiteralPath 'D:\ProgrammingStuff\Crush\my_fork\crush-dshlike.exe' -Destination '.\crush.exe' -Force
+Copy-Item -LiteralPath '<fork 仓库目录>\crush-dshlike.exe' -Destination '.\crush.exe' -Force
 & .\crush.exe --version
 Get-ChildItem -Filter 'crush*.exe*' | Select-Object Name,Length,LastWriteTime
 ```

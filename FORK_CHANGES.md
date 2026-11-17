@@ -211,7 +211,7 @@ go test ./internal/shell/ ./internal/agent/tools/ ./internal/config/ ./internal/
 ### 5.3 执行顺序
 
 ```bash
-cd D:/ProgrammingStuff/Crush/my_fork
+cd <fork 仓库目录>
 git status                       # 必须干净
 git branch backup/pre-sync-20261114
 git fetch origin

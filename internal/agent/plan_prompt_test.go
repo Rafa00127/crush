@@ -55,12 +55,12 @@ func TestPlanPromptListsConfiguredTools(t *testing.T) {
 	// Interactive: subagents report back on their own, so the detached
 	// pair is advertised and the blocking tool is not.
 	require.Contains(t, buildPrompt(t, true),
-		"Your available tools are: agent_dispatch, agent_send, agent_status, agent_stop, lsp_symbols, lsp_definition, lsp_call_hierarchy, glob, grep, ls, question, sourcegraph, view.")
+		"Your available tools are: agent_dispatch, agent_send, agent_status, agent_stop, lsp_symbols, lsp_definition, lsp_call_hierarchy, glob, grep, ls, question, sourcegraph, read.")
 
 	// Headless: nothing is left to receive a later report, so delegation
 	// blocks instead, and there is nobody to answer a question.
 	require.Contains(t, buildPrompt(t, false),
-		"Your available tools are: agent, lsp_symbols, lsp_definition, lsp_call_hierarchy, glob, grep, ls, sourcegraph, view.")
+		"Your available tools are: agent, lsp_symbols, lsp_definition, lsp_call_hierarchy, glob, grep, ls, sourcegraph, read.")
 
 	// A tool the user disabled disappears from the advertised list.
 	// (The word "question" still appears elsewhere in the prompt's rules,
@@ -69,6 +69,6 @@ func TestPlanPromptListsConfiguredTools(t *testing.T) {
 	cfg.SetupAgents()
 	systemPrompt := buildPrompt(t, true)
 	require.Contains(t, systemPrompt,
-		"Your available tools are: agent_dispatch, agent_send, agent_status, agent_stop, lsp_symbols, lsp_definition, lsp_call_hierarchy, glob, grep, ls, sourcegraph, view.")
+		"Your available tools are: agent_dispatch, agent_send, agent_status, agent_stop, lsp_symbols, lsp_definition, lsp_call_hierarchy, glob, grep, ls, sourcegraph, read.")
 	require.NotContains(t, systemPrompt, "ls, question,")
 }
