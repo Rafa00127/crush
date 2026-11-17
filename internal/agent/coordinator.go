@@ -277,13 +277,20 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		return nil, errCoderAgentNotConfigured
 	}
 
-	coderPrompt, err := coderPrompt(append(
+	promptOpts := append(
 		[]prompt.Option{
 			prompt.WithWorkingDir(c.cfg.WorkingDir()),
 			prompt.WithWebSearch(tools.ProviderSearchFromConfig(c.cfg.Config()) != nil),
 		},
 		c.skillOverrideOptions()...,
-	)...)
+	)
+	// Mini mode replaces the whole prompt, not just part of it: the point of
+	// the mode is a short fixed prompt with a single tool.
+	buildCoderPrompt := coderPrompt
+	if c.miniMode() {
+		buildCoderPrompt = miniPrompt
+	}
+	coderPrompt, err := buildCoderPrompt(promptOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1100,6 +1107,14 @@ func (c *coordinator) applyToolSearch(mcpTools []*tools.Tool) []fantasy.AgentToo
 // detaches here. Subagents get neither, since they can neither fan out nor
 // ask questions.
 func (c *coordinator) effectiveToolNames(agentCfg config.Agent, isSubAgent bool) []string {
+	if c.miniMode() && !isSubAgent {
+		// One tool, plus the one that stops a job it started. Trimming here
+		// also keeps the other schemas out of every request, which is most
+		// of what the mode buys.
+		return slices.DeleteFunc(slices.Clone(agentCfg.AllowedTools), func(name string) bool {
+			return !slices.Contains(miniToolNames, name)
+		})
+	}
 	return slices.DeleteFunc(slices.Clone(agentCfg.AllowedTools), func(name string) bool {
 		switch name {
 		case tools.QuestionToolName:
@@ -1111,6 +1126,18 @@ func (c *coordinator) effectiveToolNames(agentCfg config.Agent, isSubAgent bool)
 		}
 		return false
 	})
+}
+
+// miniToolNames is what --mode mini leaves the agent: the shell does
+// everything, and job_kill is the one thing a shell cannot do for itself.
+var miniToolNames = []string{
+	tools.BashToolName,
+	tools.JobKillToolName,
+}
+
+// miniMode reports whether this coordinator runs the one-tool mode.
+func (c *coordinator) miniMode() bool {
+	return c.cfg != nil && c.cfg.Overrides() != nil && c.cfg.Overrides().Mini
 }
 
 // buildTools builds an agent's tools. parentModel reports the model the
@@ -1231,27 +1258,31 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 	}
 
 	var mcpTools []*tools.Tool
-	for _, tool := range tools.GetMCPTools(c.permissions, c.cfg, c.cfg.WorkingDir()) {
-		if agent.AllowedMCP == nil {
-			// No MCP restrictions
-			mcpTools = append(mcpTools, tool)
-			continue
-		}
-		if len(agent.AllowedMCP) == 0 {
-			// No MCPs allowed
-			slog.Debug("No MCPs allowed", "tool", tool.Name(), "agent", agent.Name)
-			break
-		}
-
-		for mcp, allowed := range agent.AllowedMCP {
-			if mcp != tool.MCP() {
+	// Mini mode is one shell: MCP tools would add back exactly the schemas
+	// the mode exists to drop.
+	if !c.miniMode() {
+		for _, tool := range tools.GetMCPTools(c.permissions, c.cfg, c.cfg.WorkingDir()) {
+			if agent.AllowedMCP == nil {
+				// No MCP restrictions
+				mcpTools = append(mcpTools, tool)
 				continue
 			}
-			if len(allowed) == 0 || slices.Contains(allowed, tool.MCPToolName()) {
-				mcpTools = append(mcpTools, tool)
+			if len(agent.AllowedMCP) == 0 {
+				// No MCPs allowed
+				slog.Debug("No MCPs allowed", "tool", tool.Name(), "agent", agent.Name)
 				break
 			}
-			slog.Debug("MCP not allowed", "tool", tool.Name(), "agent", agent.Name)
+
+			for mcp, allowed := range agent.AllowedMCP {
+				if mcp != tool.MCP() {
+					continue
+				}
+				if len(allowed) == 0 || slices.Contains(allowed, tool.MCPToolName()) {
+					mcpTools = append(mcpTools, tool)
+					break
+				}
+				slog.Debug("MCP not allowed", "tool", tool.Name(), "agent", agent.Name)
+			}
 		}
 	}
 	filteredTools = append(filteredTools, c.applyToolSearch(mcpTools)...)

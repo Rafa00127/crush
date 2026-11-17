@@ -64,6 +64,7 @@ func init() {
 	rootCmd.PersistentFlags().CountP("yolo", "y", "Skip permission prompts: -y to stop being asked and block dangerous commands, -yy to allow them too")
 	rootCmd.PersistentFlags().StringSlice("channels", nil, "MCP servers to enable as channels (repeatable), e.g. --channels server:webhook")
 	_ = rootCmd.PersistentFlags().MarkHidden("channels")
+	rootCmd.PersistentFlags().String("mode", "", `Tool mode: leave empty for the full toolset, or "mini" for a short fixed prompt with the shell as the only tool`)
 	rootCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
 	rootCmd.Flags().BoolP("continue", "C", false, "Continue the most recent session")
 	rootCmd.MarkFlagsMutuallyExclusive("session", "continue")
@@ -320,6 +321,10 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	debug, _ := cmd.Flags().GetBool("debug")
 	yoloCount, _ := cmd.Flags().GetCount("yolo")
 	channels, _ := cmd.Flags().GetStringSlice("channels")
+	mode, _ := cmd.Flags().GetString("mode")
+	if mode != "" && mode != "mini" {
+		return nil, nil, fmt.Errorf(`unknown --mode %q: the only mode is "mini"`, mode)
+	}
 	dataDir, _ := cmd.Flags().GetString("data-dir")
 	ctx := cmd.Context()
 
@@ -335,6 +340,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 
 	cfg := store.Config()
 	store.Overrides().EnabledChannels = channels
+	store.Overrides().Mini = mode == "mini"
 	if yoloCount > 1 {
 		store.Overrides().PermissionMode = permission.PermissionModeSysadmin
 		fmt.Fprintln(os.Stderr, sysadminModeWarning)

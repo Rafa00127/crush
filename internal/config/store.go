@@ -62,6 +62,9 @@ type fileSnapshot struct {
 // the lifetime of the process (or workspace).
 type RuntimeOverrides struct {
 	PermissionMode permission.PermissionMode
+	// Mini selects the one-tool mode (--mode mini): a short fixed system
+	// prompt and the shell as the only way to touch the workspace.
+	Mini bool
 	// EnabledChannels lists the MCP servers opted in as channels for this
 	// session (via the --channels flag). A server present in MCP config only
 	// pushes channel events when it also appears here. Entries may be written
