@@ -284,6 +284,7 @@ func TestProcessMultiEditExistingFilePartialFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
 	require.Contains(t, resp.Content, "Applied 1 of 2 edits")
+	require.Contains(t, resp.Content, "edit #2:", "a partial failure must say which edit failed and why")
 
 	content, err := os.ReadFile(filePath)
 	require.NoError(t, err)
@@ -324,6 +325,7 @@ func TestProcessMultiEditWithCreationPartialFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
 	require.Contains(t, resp.Content, "File created with 2 of 3 edits")
+	require.Contains(t, resp.Content, "edit #3:", "a partial failure must say which edit failed and why")
 
 	content, err := os.ReadFile(filePath)
 	require.NoError(t, err)

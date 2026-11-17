@@ -246,7 +246,7 @@ func processMultiEditWithCreation(edit editContext, params MultiEditParams, call
 
 	var message string
 	if len(failedEdits) > 0 {
-		message = fmt.Sprintf("File created with %d of %d edits: %s (%d edit(s) failed)", editsApplied, len(params.Edits), params.FilePath, len(failedEdits))
+		message = fmt.Sprintf("File created with %d of %d edits: %s (%d edit(s) failed)%s", editsApplied, len(params.Edits), params.FilePath, len(failedEdits), describeFailedEdits(failedEdits))
 	} else {
 		message = fmt.Sprintf("File created with %d edits: %s", len(params.Edits), params.FilePath)
 	}
@@ -341,7 +341,7 @@ func processMultiEditExistingFile(edit editContext, params MultiEditParams, call
 
 	var message string
 	if len(failedEdits) > 0 {
-		message = fmt.Sprintf("Applied %d of %d edits to file: %s (%d edit(s) failed)", editsApplied, len(params.Edits), params.FilePath, len(failedEdits))
+		message = fmt.Sprintf("Applied %d of %d edits to file: %s (%d edit(s) failed)%s", editsApplied, len(params.Edits), params.FilePath, len(failedEdits), describeFailedEdits(failedEdits))
 	} else {
 		message = fmt.Sprintf("Applied %d edits to file: %s", len(params.Edits), params.FilePath)
 	}
