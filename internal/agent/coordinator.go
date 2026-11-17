@@ -1108,14 +1108,18 @@ func (c *coordinator) applyToolSearch(mcpTools []*tools.Tool) []fantasy.AgentToo
 // ask questions.
 func (c *coordinator) effectiveToolNames(agentCfg config.Agent, isSubAgent bool) []string {
 	if c.miniMode() && !isSubAgent && agentCfg.ID == config.AgentCoder {
-		// One tool, plus the one that stops a job it started. Trimming here
-		// also keeps the other schemas out of every request, which is most
-		// of what the mode buys. Only the coder: the plan agent's list has
-		// no shell at all, so trimming it would leave plan mode with no
-		// tools to explore with.
-		return slices.DeleteFunc(slices.Clone(agentCfg.AllowedTools), func(name string) bool {
-			return !slices.Contains(miniToolNames, name)
-		})
+		// The mode's own list, not the coder's: it drops the whole file
+		// toolset (the shell replaces it) but keeps read_image, which a
+		// shell cannot do. Only the coder: the plan agent's list has no
+		// shell at all, so trimming it would leave plan mode with no tools
+		// to explore with.
+		out := make([]string, 0, len(miniToolNames))
+		for _, name := range miniToolNames {
+			if !slices.Contains(c.cfg.Config().Options.DisabledTools, name) {
+				out = append(out, name)
+			}
+		}
+		return out
 	}
 	return slices.DeleteFunc(slices.Clone(agentCfg.AllowedTools), func(name string) bool {
 		switch name {
@@ -1134,6 +1138,7 @@ func (c *coordinator) effectiveToolNames(agentCfg config.Agent, isSubAgent bool)
 // everything, and job_kill is the one thing a shell cannot do for itself.
 var miniToolNames = []string{
 	tools.BashToolName,
+	tools.ReadImageToolName,
 	tools.JobKillToolName,
 }
 
@@ -1202,6 +1207,7 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 		tools.NewCrushInfoTool(c.cfg, c.lspManager, c.allSkills, c.activeSkills, c.skillTracker),
 		tools.NewCrushLogsTool(logFile),
 		tools.NewJobOutputTool(c.cfg.Config().Options.DataDirectory, c.cfg.Config().Options.GetJobOutputWait()),
+		tools.NewReadImageTool(c.permissions, c.cfg.WorkingDir()),
 		tools.NewJobKillTool(),
 		tools.NewDownloadTool(c.permissions, c.cfg.WorkingDir(), nil),
 		tools.NewEditTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
