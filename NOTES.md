@@ -6,16 +6,19 @@
 部署目标是 PATH 上的 `<部署目录>\crush.exe`。
 
 环境变量沿用 `Taskfile.yaml` 的全局设置（`CGO_ENABLED=0`、
-`GOEXPERIMENT=greenteagc`），构建必须带 `-s -w` 去符号表（否则体积从
-~94MB 涨到 ~132MB）。
+`GOEXPERIMENT=greenteagc`），并且按 `.goreleaser.yml` 的 release 参数构建：加 `-trimpath`，
+`-s -w` 去符号表（否则体积从 ~94MB 涨到 ~132MB），版本号用 `git describe --long` 注入。
 
 ### 编译
 
 ```bash
-CGO_ENABLED=0 GOEXPERIMENT=greenteagc go build \
+CGO_ENABLED=0 GOEXPERIMENT=greenteagc go build -trimpath \
   -ldflags="-s -w -X github.com/charmbracelet/crush/internal/version.Version=$(git describe --long)" \
   -o crush-dshlike.exe .
 ```
+
+`-trimpath` 让二进制里不再出现本机绝对路径（可复现、体积略小、panic 栈干净），和
+upstream release 一致；goreleaser 只多一个 `-buildid=''`。
 
 ### 验证
 
