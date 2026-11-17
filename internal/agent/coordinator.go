@@ -1107,10 +1107,12 @@ func (c *coordinator) applyToolSearch(mcpTools []*tools.Tool) []fantasy.AgentToo
 // detaches here. Subagents get neither, since they can neither fan out nor
 // ask questions.
 func (c *coordinator) effectiveToolNames(agentCfg config.Agent, isSubAgent bool) []string {
-	if c.miniMode() && !isSubAgent {
+	if c.miniMode() && !isSubAgent && agentCfg.ID == config.AgentCoder {
 		// One tool, plus the one that stops a job it started. Trimming here
 		// also keeps the other schemas out of every request, which is most
-		// of what the mode buys.
+		// of what the mode buys. Only the coder: the plan agent's list has
+		// no shell at all, so trimming it would leave plan mode with no
+		// tools to explore with.
 		return slices.DeleteFunc(slices.Clone(agentCfg.AllowedTools), func(name string) bool {
 			return !slices.Contains(miniToolNames, name)
 		})
