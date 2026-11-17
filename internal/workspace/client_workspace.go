@@ -850,6 +850,22 @@ func (w *ClientWorkspace) MCPSetServerConfigDisabled(ctx context.Context, name s
 	return w.client.SetMCPServerConfigDisabled(ctx, w.workspaceID(), name, disabled)
 }
 
+func (w *ClientWorkspace) SkillsDisabled(ctx context.Context) ([]string, error) {
+	return w.client.SkillsDisabled(ctx, w.workspaceID())
+}
+
+func (w *ClientWorkspace) SkillSetDisabled(ctx context.Context, name string, disabled bool) error {
+	return w.client.SetSkillDisabled(ctx, w.workspaceID(), name, disabled)
+}
+
+func (w *ClientWorkspace) SkillsEnabled(ctx context.Context) ([]string, error) {
+	return w.client.SkillsEnabled(ctx, w.workspaceID())
+}
+
+func (w *ClientWorkspace) SkillSetConfigDisabled(ctx context.Context, name string, disabled bool) error {
+	return w.client.SetSkillConfigDisabled(ctx, w.workspaceID(), name, disabled)
+}
+
 func (w *ClientWorkspace) MCPStartServer(ctx context.Context, name string) error {
 	return w.client.StartMCPServer(ctx, w.workspaceID(), name)
 }
@@ -1359,6 +1375,7 @@ func (w *ClientWorkspace) translateEvent(ev any) tea.Msg {
 			SessionTitle: e.Payload.SessionTitle,
 			RunID:        e.Payload.RunID,
 			Type:         notify.Type(e.Payload.Type),
+			ProviderID:   e.Payload.ProviderID,
 			AWSSOCommand: e.Payload.AWSSOCommand,
 			AWSSOURL:     e.Payload.AWSSOURL,
 		}
@@ -1371,11 +1388,8 @@ func (w *ClientWorkspace) translateEvent(ev any) tea.Msg {
 		}
 	case pubsub.Event[proto.RunComplete]:
 		// Translate the wire-level proto.RunComplete back into the
-		// agent's domain notify.RunComplete. Without this case the
-		// default branch below warns on every run completion in the
-		// server-mode TUI, even though the TUI itself doesn't act
-		// on RunComplete — converting silently keeps the workspace
-		// event bridge symmetric with the server-side wrapEvent.
+		// agent's domain notify.RunComplete. The TUI ends its pending
+		// turn and clears its busy probe on it.
 		return pubsub.Event[notify.RunComplete]{
 			Type: e.Type,
 			Payload: notify.RunComplete{
@@ -1495,6 +1509,7 @@ func protoToMessage(m proto.Message) message.Message {
 		SessionID:               m.SessionID,
 		Role:                    message.MessageRole(m.Role),
 		Model:                   m.Model,
+		ModelName:               m.ModelName,
 		Provider:                m.Provider,
 		PrismModelID:            m.PrismModelID,
 		PrismModelName:          m.PrismModelName,
@@ -1518,20 +1533,22 @@ func protoToMessage(m proto.Message) message.Message {
 			})
 		case proto.ToolCall:
 			msg.Parts = append(msg.Parts, message.ToolCall{
-				ID:       v.ID,
-				Name:     v.Name,
-				Input:    v.Input,
-				Finished: v.Finished,
+				ID:          v.ID,
+				Name:        v.Name,
+				Input:       v.Input,
+				Finished:    v.Finished,
+				StartedAtMs: v.StartedAtMs,
 			})
 		case proto.ToolResult:
 			msg.Parts = append(msg.Parts, message.ToolResult{
-				ToolCallID: v.ToolCallID,
-				Name:       v.Name,
-				Content:    v.Content,
-				Data:       v.Data,
-				MIMEType:   v.MIMEType,
-				Metadata:   v.Metadata,
-				IsError:    v.IsError,
+				ToolCallID:   v.ToolCallID,
+				Name:         v.Name,
+				Content:      v.Content,
+				Data:         v.Data,
+				MIMEType:     v.MIMEType,
+				Metadata:     v.Metadata,
+				IsError:      v.IsError,
+				FinishedAtMs: v.FinishedAtMs,
 			})
 		case proto.Finish:
 			msg.Parts = append(msg.Parts, message.Finish{
@@ -1549,6 +1566,13 @@ func protoToMessage(m proto.Message) message.Message {
 				Command:  v.Command,
 				Output:   v.Output,
 				ExitCode: v.ExitCode,
+			})
+		case proto.SubAgentReport:
+			msg.Parts = append(msg.Parts, message.SubAgentReport{
+				Label:  v.Label,
+				Output: v.Output,
+				Failed: v.Failed,
+				Model:  v.Model,
 			})
 		}
 	}

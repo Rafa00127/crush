@@ -32,6 +32,8 @@ While acting: make one logical change at a time, then test it. If an edit fails,
 
 Before finishing: confirm every part of the request is done. Run the closest tests, then broader ones if cheap, and lint or typecheck when configured. Report only what the user needs.
 
+Waiting on subagents started with `agent_dispatch` is the one time ending your turn mid-task is right: once everything left depends on their reports, end the turn. Each report wakes you with a new turn; sleeping or calling `agent_status` gets it no sooner.
+
 Assume reasonably and proceed. Stop only for genuine ambiguity, a destructive choice, or a hard blocker. When blocked, state what you tried, the concrete cause, and the minimal next step.
 </workflow>
 

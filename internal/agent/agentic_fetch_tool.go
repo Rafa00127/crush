@@ -157,8 +157,7 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 					// sub-agent has to drive itself.
 					searchHint = "Use the web_search tool to find relevant information; the provider runs it and returns source titles and URLs. When a result lacks a usable excerpt, use web_fetch to read the page and extract details yourself. Break the question into focused searches if needed."
 				}
-				fullPrompt = fmt.Sprintf("%s\n\n%s", params.Prompt, searchHint)
-			}
+				fullPrompt = fmt.Sprintf("%s\n\n%s", params.Prompt, searchHint)			}
 
 			promptOpts := []prompt.Option{
 				prompt.WithWorkingDir(tmpDir),
@@ -194,8 +193,7 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 				fetchTools = append(fetchTools, tools.NewWebSearchTool(client, providerSearch))
 			}
 
-			// Sub-agent tools run without hook interception. The top-level
-			// `agentic_fetch` call itself is already wrapped from the coder's
+			// Sub-agent tools run without hook interception. The top-level			// `agentic_fetch` call itself is already wrapped from the coder's
 			// side; firing hooks again for every inner tool call would run
 			// the user's hooks N times per delegated turn.
 
@@ -208,9 +206,9 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 				Messages:             c.messages,
 				Tools:                fetchTools,
 				ProviderTools:        providerTools,
-			})
+				titles:               &c.titles,			})
 
-			return c.runSubAgent(ctx, subAgentParams{
+			return c.runSubAgentMaybeBackground(ctx, tools.AgenticFetchToolName, accessRead, subAgentParams{
 				Agent:          agent,
 				SessionID:      validationResult.SessionID,
 				AgentMessageID: validationResult.AgentMessageID,

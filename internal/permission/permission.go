@@ -40,20 +40,20 @@ type PermissionMode int
 const (
 	// PermissionModeNormal prompts for all non-safe commands.
 	PermissionModeNormal PermissionMode = iota
-	// PermissionModeYolo auto-approves every request, including dangerous
-	// commands, but keeps the exec-time block list armed so a dangerous
-	// command that only surfaces once the shell runs it is still caught.
+	// PermissionModeYolo never prompts and refuses dangerous commands.
 	PermissionModeYolo
-	// PermissionModeSysadmin auto-approves every request and drops the
-	// exec-time block list as well, so nothing is checked at any point.
+	// PermissionModeSysadmin never prompts and refuses nothing.
 	PermissionModeSysadmin
 )
 
-// SkipsPrompts reports whether the mode answers requests itself instead of
-// putting them in front of the user. Yolo and sysadmin both do; they part
-// ways only later, at exec time, over the block list.
+// SkipsPrompts reports whether the mode answers requests without asking.
 func (m PermissionMode) SkipsPrompts() bool {
 	return m == PermissionModeYolo || m == PermissionModeSysadmin
+}
+
+// RefusesDangerous reports whether a dangerous command is refused instead of asked about.
+func (m PermissionMode) RefusesDangerous() bool {
+	return m == PermissionModeYolo
 }
 
 type CreatePermissionRequest struct {
@@ -141,6 +141,10 @@ type Service interface {
 	// was cancelled is not returned.
 	ActiveRequest() (PermissionRequest, bool)
 	AutoApproveSession(sessionID string)
+	// InheritAutoApproval approves the child session automatically when its
+	// parent session already is. A child of any other session keeps
+	// prompting.
+	InheritAutoApproval(parentSessionID, childSessionID string)
 	SetPermissionMode(mode PermissionMode)
 	PermissionMode() PermissionMode
 	SubscribeNotifications(ctx context.Context) <-chan pubsub.Event[PermissionNotification]
@@ -281,11 +285,6 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	mode := s.mode
 	s.modeMu.RUnlock()
 
-	// Both yolo and sysadmin mean "stop asking me", so neither prompts,
-	// not even for a dangerous command. They part ways after this, at exec
-	// time: yolo keeps the block list armed for commands the static check
-	// did not flag, and sysadmin disarms it entirely. Normal mode is the
-	// only one that still puts a dangerous command in front of the user.
 	if mode.SkipsPrompts() {
 		return true, nil
 	}
@@ -446,6 +445,14 @@ func (s *permissionService) AutoApproveSession(sessionID string) {
 	s.autoApproveSessionsMu.Lock()
 	s.autoApproveSessions[sessionID] = true
 	s.autoApproveSessionsMu.Unlock()
+}
+
+func (s *permissionService) InheritAutoApproval(parentSessionID, childSessionID string) {
+	s.autoApproveSessionsMu.Lock()
+	defer s.autoApproveSessionsMu.Unlock()
+	if s.autoApproveSessions[parentSessionID] {
+		s.autoApproveSessions[childSessionID] = true
+	}
 }
 
 func (s *permissionService) SubscribeNotifications(ctx context.Context) <-chan pubsub.Event[PermissionNotification] {
