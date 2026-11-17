@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -783,4 +784,46 @@ func TestBashTool_RunInBackgroundDoesNotSendTheModelFetching(t *testing.T) {
 	require.Contains(t, resp.Content, "job_kill "+meta.ShellID)
 
 	require.NoError(t, shell.GetBackgroundShellManager().Kill(meta.ShellID))
+}
+
+// A configured bash binary makes the tool run commands with real bash syntax
+// the built-in interpreter does not support, with no change to the tool's
+// contract.
+func TestBashTool_RunsThroughConfiguredBash(t *testing.T) {
+	bash := realBashForTest(t)
+	manager := shell.GetBackgroundShellManager()
+	manager.SetRuntime(nil, bash)
+	t.Cleanup(func() { manager.SetRuntime(nil, "") })
+
+	tool := newBashToolForTest(t.TempDir())
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+
+	resp := runBashTool(t, tool, ctx, BashParams{
+		Description: "real bash syntax",
+		Command:     `[[ -n abc ]] && echo "[[]] ok"; echo "arith $((6*7))"; arr=(a b c); echo "array ${#arr[@]}"`,
+	})
+
+	require.False(t, resp.IsError)
+	require.Contains(t, resp.Content, "[[]] ok")
+	require.Contains(t, resp.Content, "arith 42")
+	require.Contains(t, resp.Content, "array 3")
+}
+
+// realBashForTest returns a bash that is a real shell, skipping when the
+// machine has none (on Windows the bash on PATH is usually the WSL launcher).
+func realBashForTest(t *testing.T) string {
+	t.Helper()
+	candidates := []string{"bash", "/bin/bash", `C:\msys64\usr\bin\bash.exe`}
+	for _, candidate := range candidates {
+		path, err := exec.LookPath(candidate)
+		if err != nil {
+			continue
+		}
+		out, err := exec.Command(path, "-c", "echo $BASH_VERSION").Output()
+		if err == nil && strings.TrimSpace(string(out)) != "" {
+			return path
+		}
+	}
+	t.Skip("no real bash on this machine")
+	return ""
 }

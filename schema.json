@@ -688,6 +688,20 @@
             60
           ]
         },
+        "shell_env": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Extra environment variables for the bash tool, as KEY=VALUE entries. A value may reference the parent environment with $VAR or %VAR%, which is how PATH is usually extended."
+        },
+        "bash_path": {
+          "type": "string",
+          "description": "Path to a bash binary the bash tool should run commands with instead of the built-in interpreter. On Windows this is how an msys2 environment becomes usable, since the bash on PATH is usually WSL's.",
+          "examples": [
+            "C:/msys64/usr/bin/bash.exe"
+          ]
+        },
         "job_output_wait": {
           "type": "integer",
           "description": "Seconds job_output may block when wait=true",

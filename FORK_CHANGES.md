@@ -42,6 +42,7 @@ git status --short && git diff --stat        # 在途改动
 | 重定向输出检测 | `internal/agent/tools/bash.go` | 命令写日志文件时作业永远是 `no output`；用 mvdan 解析器只看**最后一条顶层语句**的重定向，并点名日志文件 |
 | 重定向命令 2s 交棒 | 同上（`RedirectedOutputGrace`） | 输出不可能到达我们这边，等满阈值没有意义 |
 | 默认交棒阈值 60s → 15s | 同上 + `internal/config/config.go` + `internal/shellconfig/options.go` | 让对话尽早空出来；新增 `option auto-background-after N` / `options.auto_background_after` |
+| 外部 bash 执行器 | `internal/shell/shell.go`、`background.go`、`internal/config/config.go`、`internal/shellconfig/options.go` | `options.bash_path` 命中时命令交给那个 bash（`-c`）执行，替代内建解释器：`WaitDelay`、退出码、流式输出契约不变。Windows 上这是让 msys2 可用的唯一方式（PATH 上的 `bash` 通常是 WSL）。`options.shell_env` 提供额外环境变量，值支持 `$VAR`/`%VAR%` 展开（`PATH=<msys>/usr/bin;$PATH`） |
 | 交棒文案 | `bash.go`、`bash.md.tpl`、`job_output.md` | 明确告诉模型"已转后台、输出还在、你可以继续聊"，并说明如何回头看结果 |
 
 **有意保留的取舍**：Windows 侧不做进程树击杀（没有 Job Object，`job_kill` 只终止

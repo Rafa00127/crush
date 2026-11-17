@@ -45,6 +45,7 @@ import (
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/question"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/shell"
 	"github.com/charmbracelet/crush/internal/skills"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
@@ -1158,6 +1159,13 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 	}
 
 	logFile := filepath.Join(c.cfg.Config().Options.DataDirectory, "logs", "crush.log")
+
+	// Every job inherits the configured environment and, when one is set,
+	// the bash binary that runs commands instead of the interpreter.
+	shell.GetBackgroundShellManager().SetRuntime(
+		c.cfg.Config().Options.GetShellEnv(),
+		c.cfg.Config().Options.GetBashPath(),
+	)
 
 	allTools = append(
 		allTools,

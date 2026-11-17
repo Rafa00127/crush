@@ -55,6 +55,11 @@ type BackgroundShellManager struct {
 	// onComplete runs when a backgrounded job finishes, so the UI can tell
 	// the user. Nil when nobody is listening.
 	onComplete func(*BackgroundShell)
+	// env and bashPath are the runtime settings every job inherits: extra
+	// environment variables from the config and, when set, the bash binary
+	// that runs commands instead of the built-in interpreter.
+	env      []string
+	bashPath string
 }
 
 var (
@@ -91,6 +96,8 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 	shell := NewShell(&Options{
 		WorkingDir: workingDir,
 		BlockFuncs: blockFuncs,
+		Env:        m.env,
+		BashPath:   m.bashPath,
 	})
 
 	shellCtx, cancel := context.WithCancel(ctx)
@@ -287,6 +294,17 @@ func (bs *BackgroundShell) WaitContext(ctx context.Context) bool {
 	case <-ctx.Done():
 		return false
 	}
+}
+
+// SetRuntime sets the environment extra and the bash binary every new job
+// inherits. Empty values keep the built-in interpreter and the process
+// environment. Replacing them applies to jobs started afterwards; running
+// jobs keep what they started with.
+func (m *BackgroundShellManager) SetRuntime(env []string, bashPath string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.env = env
+	m.bashPath = bashPath
 }
 
 // SetCompletionHandler registers fn to run when a backgrounded job finishes.

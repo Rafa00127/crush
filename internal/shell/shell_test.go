@@ -2,11 +2,14 @@ package shell
 
 import (
 	"context"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 // Benchmark to measure CPU efficiency
@@ -117,4 +120,41 @@ func TestCrossPlatformExecution(t *testing.T) {
 	if !strings.Contains(strings.ToLower(stdout), "hello") {
 		t.Errorf("Echo output should contain 'hello', got: %q", stdout)
 	}
+}
+
+// A configured bash binary replaces the interpreter: the command runs with
+// that shell, at the shell's working directory, and its exit status comes
+// back as one callers can read.
+func TestShellRunsCommandsThroughConfiguredBash(t *testing.T) {
+	t.Parallel()
+
+	bash := findBashForTest(t)
+	sh := NewShell(&Options{WorkingDir: t.TempDir(), BashPath: bash})
+
+	var out strings.Builder
+	err := sh.ExecStream(t.Context(), `echo "bash=$BASH_VERSION"; pwd; exit 3`, &out, &out)
+	require.Equal(t, 3, ExitCode(err), "a bash command's exit status must survive")
+
+	text := out.String()
+	require.Contains(t, text, "bash=", "the configured bash ran the command: %s", text)
+	require.NotContains(t, text, "syntax error")
+}
+
+// findBashForTest returns a real bash found on PATH, skipping the test when
+// there is none. A wrapper that only shadows the name (on Windows, the WSL
+// launcher) is not good enough, so the version variable must be set.
+func findBashForTest(t *testing.T) string {
+	t.Helper()
+	for _, candidate := range []string{"bash", "/bin/bash", `C:\msys64\usr\bin\bash.exe`} {
+		path, err := exec.LookPath(candidate)
+		if err != nil {
+			continue
+		}
+		out, err := exec.Command(path, "-c", "echo $BASH_VERSION").Output()
+		if err == nil && strings.TrimSpace(string(out)) != "" {
+			return path
+		}
+	}
+	t.Skip("no real bash on this machine")
+	return ""
 }

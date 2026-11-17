@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -482,6 +483,14 @@ type Options struct {
 	// before handing it to the background and freeing the turn. The command
 	// keeps running and its output stays readable with job_output.
 	AutoBackgroundAfter *int `json:"auto_background_after,omitempty" jsonschema:"description=Seconds the bash tool waits for a command before moving it to the background and freeing the turn. The command keeps running and job_output still reads its output. 0 or negative restores the default.,default=15,example=5,example=60"`
+	// ShellEnv holds extra environment variables for the bash tool, as
+	// KEY=VALUE entries. Values may refer to the parent environment with
+	// $VAR or %VAR%, which is how PATH is normally extended.
+	ShellEnv []string `json:"shell_env,omitempty" jsonschema:"description=Extra environment variables for the bash tool\\, as KEY=VALUE entries. A value may reference the parent environment with $VAR or %VAR%\\, which is how PATH is usually extended.,example=PATH=C:/msys64/usr/bin;$PATH,example=MSYSTEM=MSYS"`
+	// BashPath runs bash tool commands through that binary instead of the
+	// built-in interpreter, for environments where only a real bash works
+	// (an msys2 install on Windows, for example).
+	BashPath string `json:"bash_path,omitempty" jsonschema:"description=Path to a bash binary the bash tool should run commands with instead of the built-in interpreter. On Windows this is how an msys2 environment becomes usable\\, since the bash on PATH is usually WSL's.,example=C:/msys64/usr/bin/bash.exe"`
 	// JobOutputWait caps how long job_output may block when asked to wait
 	// for a job. 0, the default, disables waiting: a job's result is
 	// delivered when it finishes, so waiting only holds the turn.
@@ -642,6 +651,89 @@ func (o *Options) GetAutoBackgroundAfter() int {
 // DefaultJobOutputWait is zero: a finished job delivers its own output, so
 // waiting on one only holds the conversation. Set job_output_wait to allow it.
 const DefaultJobOutputWait = 0
+
+// GetShellEnv returns the extra environment for the bash tool, with $VAR and
+// %VAR% references expanded from the parent environment. The result is meant
+// to be appended to os.Environ(); later entries win, so a PATH entry here
+// replaces the inherited one.
+func (o *Options) GetShellEnv() []string {
+	if o == nil || len(o.ShellEnv) == 0 {
+		return nil
+	}
+	parent := map[string]string{}
+	for _, kv := range os.Environ() {
+		if key, val, ok := strings.Cut(kv, "="); ok {
+			parent[key] = val
+		}
+	}
+	out := make([]string, 0, len(o.ShellEnv))
+	for _, entry := range o.ShellEnv {
+		key, val, ok := strings.Cut(entry, "=")
+		key = strings.TrimSpace(key)
+		if !ok || key == "" {
+			continue
+		}
+		out = append(out, key+"="+expandEnvValue(val, parent))
+	}
+	return out
+}
+
+// expandEnvValue replaces $VAR and %VAR% references with the parent value.
+// A name is taken from the identifier characters after `$` (or up to the
+// closing `%`), so a value that continues after a reference — a PATH full of
+// semicolons, say — keeps the rest intact. A reference with no known name is
+// left as written.
+func expandEnvValue(value string, env map[string]string) string {
+	var b strings.Builder
+	b.Grow(len(value))
+	for i := 0; i < len(value); i++ {
+		switch c := value[i]; c {
+		case '$':
+			j := i + 1
+			for j < len(value) && isEnvNameByte(value[j]) {
+				j++
+			}
+			if j > i+1 {
+				if v, ok := env[value[i+1:j]]; ok {
+					b.WriteString(v)
+					i = j - 1
+					continue
+				}
+			}
+			b.WriteByte(c)
+		case '%':
+			j := i + 1
+			for j < len(value) && value[j] != '%' {
+				j++
+			}
+			if j < len(value) && j > i+1 {
+				if v, ok := env[value[i+1:j]]; ok {
+					b.WriteString(v)
+					i = j
+					continue
+				}
+			}
+			b.WriteByte(c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// isEnvNameByte reports whether c can appear in an environment variable name.
+func isEnvNameByte(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+// GetBashPath returns the bash binary the bash tool should run commands with,
+// or an empty string to use the built-in interpreter.
+func (o *Options) GetBashPath() string {
+	if o == nil {
+		return ""
+	}
+	return strings.TrimSpace(o.BashPath)
+}
 
 // GetJobOutputWait returns how long job_output may block, or zero when waiting
 // is disabled.

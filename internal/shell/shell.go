@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -71,6 +72,7 @@ type Shell struct {
 	mu         sync.Mutex
 	logger     Logger
 	blockFuncs []BlockFunc
+	bashPath   string
 }
 
 // Options for creating a new shell
@@ -79,6 +81,12 @@ type Options struct {
 	Env        []string
 	Logger     Logger
 	BlockFuncs []BlockFunc
+	// BashPath runs commands through that bash binary instead of the
+	// built-in interpreter when set. Crush's interpreter is enough for
+	// most work, but a real bash is what tools written for one expect
+	// (heredocs, arrays, [[ ]], rc files), and on Windows it is how an
+	// msys environment becomes usable at all.
+	BashPath string
 }
 
 // NewShell creates a new shell instance with the given options
@@ -115,6 +123,7 @@ func NewShell(opts *Options) *Shell {
 		env:        env,
 		logger:     logger,
 		blockFuncs: opts.BlockFuncs,
+		bashPath:   opts.BashPath,
 	}
 }
 
@@ -495,6 +504,10 @@ func (s *Shell) execCommon(ctx context.Context, command string, stdout, stderr i
 		return fmt.Errorf("could not parse command: %w", err)
 	}
 
+	if s.bashPath != "" {
+		return s.execViaBash(ctx, command, stdout, stderr)
+	}
+
 	runner, err = s.newInterp(nil, stdout, stderr)
 	if err != nil {
 		return fmt.Errorf("could not run command: %w", err)
@@ -502,6 +515,36 @@ func (s *Shell) execCommon(ctx context.Context, command string, stdout, stderr i
 
 	err = runner.Run(ctx, line)
 	return err
+}
+
+// execViaBash runs command through the configured bash binary.
+//
+// It deliberately keeps the same contract as the interpreter path: output is
+// streamed to the caller's writers, the command's working directory and
+// environment are the shell's, and a non-zero exit comes back as an exit
+// status so callers can read it with [ExitCode]. WaitDelay bounds the wait for
+// the output pipes, exactly as in the exec handlers, so an orphaned child
+// cannot keep a finished command running.
+func (s *Shell) execViaBash(ctx context.Context, command string, stdout, stderr io.Writer) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("command execution panic: %v", r)
+		}
+	}()
+
+	cmd := exec.CommandContext(ctx, s.bashPath, "-c", command)
+	cmd.Dir = s.cwd
+	cmd.Env = s.env
+	cmd.Stdin = nil
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.WaitDelay = defaultKillTimeout
+
+	err = cmd.Start()
+	if err == nil {
+		err = cmd.Wait()
+	}
+	return exitStatusFromError(ctx, stderr, err)
 }
 
 // exec executes commands using a cross-platform shell interpreter.

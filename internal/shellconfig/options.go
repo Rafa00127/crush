@@ -36,6 +36,8 @@ import (
 //	option max-background-jobs 200
 //	option auto-background-after 5
 //	option job-output-wait 0
+//	option bash-path C:/msys64/usr/bin/bash.exe
+//	option shell-env PATH=C:/msys64/usr/bin;$PATH
 //	option pinentry-integrated false
 //	option pinentry-cache-timeout 300
 //
@@ -215,6 +217,7 @@ var optionSpecs = map[string]optionSpec{
 	"notifications":  {jsonKey: "notifications", kind: optString},
 	"data-directory": {jsonKey: "data_directory", kind: optString},
 	"initialize-as":  {jsonKey: "initialize_as", kind: optString},
+	"bash-path":      {jsonKey: "bash_path", kind: optString},
 
 	// Integer fields.
 	"request-timeout":        {jsonKey: "request_timeout", kind: optInt},
@@ -228,6 +231,7 @@ var optionSpecs = map[string]optionSpec{
 	"global-context-path": {jsonKey: "global_context_paths", kind: optList},
 	"skill-path":          {jsonKey: "skills_paths", kind: optList},
 	"disable-skill":       {jsonKey: "disabled_skills", kind: optList},
+	"shell-env":           {jsonKey: "shell_env", kind: optList},
 }
 
 // optionUI implements "option ui <key> <value>" for TUI-specific settings
